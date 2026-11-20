@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Turnierplaner</title>
+  <meta name="theme-color" content="#14532d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%2314532d'/%3E%3Cpath d='M50 22l14 10-5 17H41l-5-17z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">Turnierplaner</a>
+    <span class="topbar-sub" id="topbar-sub"></span>
+  </header>
+  <div id="storage-warning" class="banner warn" hidden>
+    Dein Browser erlaubt kein dauerhaftes Speichern. Ergebnisse gehen beim Schließen verloren – bitte regelmäßig exportieren.
+  </div>
+  <main id="app"></main>
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+  <script src="js/logic.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
