@@ -1,16 +1,28 @@
 # Turnierplaner
 
-Web-Tool für Jugend-Fußballturniere mit **16 Teams auf 4 Spielfeldern** – entstanden aus einer Excel-Vorlage (U9-Hallenturnier).
+Web-Tool für Jugend-Fußballturniere – Liga, WM-Format oder „Andi Spezial“ (entstanden aus einer Excel-Vorlage für ein U9-Hallenturnier).
 
-## Ablauf
+## Turniermodi
 
-1. **Gruppenphase 1** – 4 Gruppen à 4 Teams, jeder gegen jeden (24 Spiele).
-2. **Gruppenphase 2** – neu gemischte Gruppen: Jede Gruppe bekommt einen Ersten, Zweiten, Dritten und Vierten aus Phase 1, jeweils aus einer anderen alten Gruppe (keine Wiederholungsspiele).
-   **Punkte und Tore beginnen wieder bei null** – gewertet wird nur innerhalb der Phase.
-3. **Finalrunde** – Gruppenerste und -zweite spielen über Kreuz Viertelfinale, danach Halbfinale / kleines Halbfinale und alle Spiele um Platz 1–8. Dritte und Vierte spielen Platz 9–16 aus. Unentschieden → Sieger im Neunmeterschießen auswählen.
-4. **Endstand** 1–16.
+**Andi Spezial** (16 Teams, 4 Felder)
+1. Gruppenphase 1 – 4 Gruppen à 4, jeder gegen jeden.
+2. Gruppenphase 2 – neu gemischt: jede Gruppe bekommt einen Ersten, Zweiten, Dritten und Vierten aus verschiedenen alten Gruppen. Punkte und Tore beginnen wieder bei null.
+3. Finalrunde – Erste/Zweite über Kreuz ins Viertelfinale, alle Plätze 1–16 werden ausgespielt.
 
-Platzierung in den Gruppen: Punkte – Tordifferenz – mehr erzielte Tore – direkter Vergleich – Los.
+**Liga** (2–32 Teams)
+- Eine Tabelle, jeder gegen jeden – optional mit Hin- und Rückrunde.
+- Optional K.-o.-Runde der besten 2, 4, 8 oder 16.
+
+**WM-Format** (2–32 Teams)
+- Gruppen mit 3–10 Teams (auch unterschiedlich groß), von Hand eingeteilt oder ausgelost.
+- Pro Gruppe kommen X Teams weiter. Ist das keine 2er-Potenz, rücken die besten Gruppen-Nächsten nach (wie die besten Gruppendritten bei der EM), bewertet nach Punkten, Tordifferenz und Toren pro Spiel.
+- Setzliste nach Gruppenplatz und Leistung, Teams aus derselben Gruppe treffen in Runde 1 möglichst nicht aufeinander.
+
+**K.-o.-Runde** (Liga & WM): wählbar „nur Finale“, „Finale + Spiel um Platz 3“ oder „alle Plätze ausspielen“. Unentschieden → Neunmeterschießen.
+
+Platzierung in Tabellen: Punkte – Tordifferenz – mehr erzielte Tore – direkter Vergleich – Los.
+
+Der Spielplan wird automatisch auf die Spielfelder verteilt – mit möglichst wenigen Runden und, wo möglich, ohne zwei Spiele eines Teams direkt hintereinander.
 
 ## Funktionen
 
@@ -50,11 +62,12 @@ Zusätzlich gibt es Export/Import als JSON-Datei.
 ## Entwicklung
 
 ```
-js/logic.js   Turnierlogik (Spielplan, Tabellen, Mischung, Finalrunde) – ohne DOM
+js/logic.js   Andi Spezial (Spielplan, Tabellen, Mischung, Finalrunde) – ohne DOM
+js/engine.js  Liga & WM-Format (Rundenturnier, Zeitplan, K.-o.-Baum, Endstand)
 js/app.js     Oberfläche
 js/sync.js    Speichern auf GitHub (Contents-API, Branch "data")
 css/style.css Styles
 tests/        Tests der Turnierlogik
 ```
 
-Tests: `node --test tests/logic.test.js`
+Tests: `node --test tests/logic.test.js tests/engine.test.js`

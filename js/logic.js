@@ -105,6 +105,7 @@
     }
     return {
       version: 1,
+      format: 'andi',
       id: uid(),
       name: opts.name || 'Neues Turnier',
       date: opts.date || '',
@@ -228,14 +229,18 @@
   function standings(t, phase, g) {
     var groups = groupsOf(t, phase);
     if (!groups) return null;
-    var ids = groups[g];
+    var games = phaseGames(t, phase).filter(function (x) { return x.group === g; });
+    return tableFromGames(t, groups[g], games);
+  }
+
+  // Allgemeine Tabelle: ids = Teams, games = Spiele mit id/home/away
+  function tableFromGames(t, ids, games) {
     var rows = {};
     ids.forEach(function (id, i) { rows[id] = emptyRow(id, i); });
-    var games = phaseGames(t, phase).filter(function (x) { return x.group === g; });
     var played = [];
     games.forEach(function (game) {
       var r = getResult(t, game.id);
-      if (!isPlayed(r)) return;
+      if (!isPlayed(r) || !rows[game.home] || !rows[game.away]) return;
       played.push({ home: game.home, away: game.away, h: r.h, a: r.a });
       addGame(rows[game.home], r.h, r.a);
       addGame(rows[game.away], r.a, r.h);
@@ -435,6 +440,7 @@
 
   function validateTournament(t) {
     if (!t || typeof t !== 'object') return 'Keine gültige Datei.';
+    if (t.format && t.format !== 'andi') return null; // andere Modi prüft engine.js
     if (!Array.isArray(t.teams) || t.teams.length !== TEAM_COUNT) return 'Die Datei enthält nicht 16 Teams.';
     if (!Array.isArray(t.groups1) || t.groups1.length !== GROUP_COUNT) return 'Gruppeneinteilung fehlt.';
     if (!t.config || !t.config.times) return 'Konfiguration fehlt.';
@@ -453,6 +459,9 @@
     TIEBREAK_TEXT: TIEBREAK_TEXT,
     uid: uid,
     createTournament: createTournament,
+    tableFromGames: tableFromGames,
+    DEFAULT_INFO: DEFAULT_INFO,
+    shuffle: shuffle,
     defaultConfig: defaultConfig,
     addMinutes: addMinutes,
     teamName: teamName,

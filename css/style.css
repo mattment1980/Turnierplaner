@@ -198,6 +198,14 @@ table.standings td.pts { font-weight: 700; }
 table.standings tr:last-child td { border-bottom: none; }
 .note { font-size: 11px; color: var(--muted); font-weight: 500; margin-left: 4px; }
 
+table.standings tr.q td:first-child { box-shadow: inset 3px 0 0 #22a04b; }
+table.standings tr.q-maybe td:first-child { box-shadow: inset 3px 0 0 #e0a100; }
+.tables-grid .card.wide { grid-column: 1 / -1; }
+.tables-grid .card.wide table.standings { max-width: 720px; }
+.team-row select.move { width: auto; flex: none; padding: 6px 4px; }
+label.field.check { display: flex; align-items: center; gap: 10px; align-self: end; padding-bottom: 8px; }
+label.field.check input { width: 20px; height: 20px; }
+
 /* Spielplan */
 .slot { margin-bottom: 14px; }
 .slot-head { font-weight: 700; font-size: 14px; color: var(--green); margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }

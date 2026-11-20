@@ -9,7 +9,7 @@
   var importInput = document.getElementById('import-file');
   var topbarSub = document.getElementById('topbar-sub');
 
-  var state = { tournaments: [], storageOk: true, showNewForm: false };
+  var state = { tournaments: [], storageOk: true, showNewForm: false, newFormat: 'groups', newTeams: 16 };
 
   /* ---------- Speichern / Laden ---------- */
 
@@ -120,7 +120,22 @@
     else location.hash = hash;
   }
 
+  function fmt(t) { return t.format || 'andi'; }
+  function isAndi(t) { return fmt(t) === 'andi'; }
+
+  function openTab(t) {
+    if (isAndi(t)) return t.groups2 || TL.phaseProgress(t, 1).done ? 'p1' : 'setup';
+    return GE.hasResults(t) ? 'spiele' : 'setup';
+  }
+
   function statusText(t) {
+    if (!isAndi(t)) {
+      var fr = GE.finalRanking(t);
+      if (fr.places[0].team && !fr.provisional && (!GE.hasKo(t) || t.koSeeds)) return 'Abgeschlossen';
+      if (t.koSeeds) return 'K.-o.-Runde';
+      var pg = GE.stageProgress(t);
+      return pg.done ? (fmt(t) === 'league' ? 'Liga' : 'Gruppenphase') + ' · ' + pg.done + '/' + pg.total : 'In Vorbereitung';
+    }
     if (TL.finalRanking(t)[0].team) return 'Abgeschlossen';
     if (t.koSeeds) return 'Finalrunde';
     if (t.groups2) return 'Gruppenphase 2 · ' + TL.phaseProgress(t, 2).done + '/24';
@@ -181,7 +196,7 @@
     });
     var h = '<img class="hero" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
       '<div class="t-head"><div><h1>Meine Turniere</h1>' +
-      '<div class="muted">16 Teams · 4 Gruppen · 2 Gruppenphasen · Finalrunde mit allen Plätzen 1–16</div></div>' +
+      '<div class="muted">Liga, WM-Format oder Andi Spezial – mit Spielplan, Tabellen, K.-o.-Runde und Endstand</div></div>' +
       '<div class="btn-row"><button class="btn primary" data-action="toggle-new">+ Neues Turnier</button>' +
       '<button class="btn" data-action="import">Importieren</button></div></div>' +
       '<div class="sync-line">' + syncBadge(Sync.globalStatus(), '') +
@@ -194,7 +209,12 @@
         '<label class="field">Datum<input type="date" id="new-date"></label>' +
         '<label class="field">Ort<input type="text" id="new-venue"></label>' +
         '<label class="field">Jahrgang<input type="text" id="new-age" placeholder="z. B. U9 (2018/2019)"></label>' +
-        '</div><div class="btn-row" style="margin-top:12px">' +
+        '<label class="field">Modus<select id="new-format">' + GE.FORMATS.map(function (f) {
+          return '<option value="' + f.key + '"' + (f.key === state.newFormat ? ' selected' : '') + '>' + esc(f.name) + '</option>';
+        }).join('') + '</select></label>' +
+        '<label class="field">Anzahl Teams<input type="number" id="new-teams" min="' + GE.MIN_TEAMS + '" max="' + GE.MAX_TEAMS + '" value="' + (state.newFormat === 'andi' ? 16 : state.newTeams) + '"' + (state.newFormat === 'andi' ? ' disabled' : '') + '></label>' +
+        '</div><p class="muted small" id="new-format-desc">' + esc(GE.formatInfo(state.newFormat).desc) + '</p>' +
+        '<div class="btn-row" style="margin-top:12px">' +
         '<button class="btn primary" data-action="create">Anlegen</button>' +
         '<button class="btn" data-action="toggle-new">Abbrechen</button></div></div>';
     }
@@ -205,11 +225,12 @@
     }
     h += '<div class="t-list">';
     list.forEach(function (t) {
-      h += '<div class="card t-card">' + logoHtml(t.logo, 'card-logo') + '<h3><a href="#/t/' + esc(t.id) + '/' + (t.groups2 || TL.phaseProgress(t, 1).done ? 'p1' : 'setup') + '">' + esc(t.name) + '</a></h3>' +
+      h += '<div class="card t-card">' + logoHtml(t.logo, 'card-logo') + '<h3><a href="#/t/' + esc(t.id) + '/' + openTab(t) + '">' + esc(t.name) + '</a></h3>' +
         '<div class="muted small">' + esc([fmtDate(t.date), t.venue, t.ageGroup].filter(Boolean).join(' · ') || 'ohne Datum') + '</div>' +
+        '<div class="muted small">' + esc(GE.formatInfo(fmt(t)).name + ' · ' + t.teams.length + ' Teams') + '</div>' +
         '<span class="status-pill">' + esc(statusText(t)) + '</span>' +
         '<div class="btn-row">' +
-        '<a class="btn small" href="#/t/' + esc(t.id) + '/p1">Öffnen</a>' +
+        '<a class="btn small" href="#/t/' + esc(t.id) + '/' + (isAndi(t) ? 'p1' : 'spiele') + '">Öffnen</a>' +
         '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
         '<button class="btn small" data-action="duplicate" data-id="' + esc(t.id) + '">Als Vorlage kopieren</button>' +
         '<button class="btn small danger" data-action="delete" data-id="' + esc(t.id) + '">Löschen</button>' +
@@ -235,6 +256,8 @@
       '<a class="btn small" href="#/">Alle Turniere</a></div></div>' +
       '<div class="sync-line no-print">' + syncBadge(Sync.statusFor(t), t.id) +
       (Sync.enabled() ? ' <button class="btn small" data-action="sync-now">Jetzt speichern</button>' : ' <a href="#/github" class="small">GitHub-Speicher einrichten</a>') + '</div>';
+
+    if (!isAndi(t)) return h + renderGenericTournament(t, tab);
 
     h += '<nav class="tabs">';
     TABS.forEach(function (x) {
@@ -489,13 +512,15 @@
   function renderInfo(t) {
     var h = '<div class="card"><dl class="info">' +
       '<dt>Jahrgang</dt><dd>' + esc(t.ageGroup || '–') + '</dd>' +
-      '<dt>Teams</dt><dd>16 (4 Gruppen à 4)</dd>' +
+      '<dt>Modus</dt><dd>' + esc(GE.formatInfo(fmt(t)).name) + '</dd>' +
+      '<dt>Teams</dt><dd>' + (isAndi(t) ? '16 (4 Gruppen à 4)' : t.teams.length + (fmt(t) === 'groups' ? ' (' + t.groups.map(function (g) { return g.length; }).join(' + ') + ')' : '') + (fmt(t) === 'league' && t.config.double ? ', Hin- und Rückrunde' : '')) + '</dd>' +
       '<dt>Spielfelder</dt><dd>' + esc(t.config.fields) + '</dd>' +
       '<dt>Spielzeit</dt><dd>' + esc(t.config.gameMinutes) + ' min</dd>' +
-      '<dt>Platzierung</dt><dd>' + esc(TL.TIEBREAK_TEXT) + ' (je Gruppenphase getrennt)</dd>' +
+      '<dt>Platzierung</dt><dd>' + esc(TL.TIEBREAK_TEXT) + (isAndi(t) ? ' (je Gruppenphase getrennt)' : '') + '</dd>' +
+      (!isAndi(t) && GE.hasKo(t) ? '<dt>K.-o.-Runde</dt><dd>' + esc(planText(t)) + '</dd>' : '') +
       '</dl></div>';
     h += '<h2>Ablauf / Zeitplan</h2><div class="card"><dl class="info">';
-    TL.timetable(t).forEach(function (r) { h += '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value || '–') + '</dd>'; });
+    (isAndi(t) ? TL.timetable(t) : GE.timetable(t)).forEach(function (r) { h += '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value || '–') + '</dd>'; });
     h += '</dl><p class="muted small">Wird automatisch aus den Startzeiten und dem Takt berechnet.</p></div>';
 
     h += '<h2>Spielregeln</h2><div class="card">';
@@ -506,6 +531,213 @@
     });
     h += '<div class="btn-row" style="margin-top:8px"><button class="btn small" data-action="rule-add">+ Regel hinzufügen</button></div></div>';
     return h;
+  }
+
+  /* ===== Liga & WM-Format ===== */
+
+  function genericTabs(t) {
+    var pg = GE.stageProgress(t);
+    var tabs = [
+      { key: 'setup', label: 'Teams & Einstellungen' },
+      { key: 'spiele', label: fmt(t) === 'league' ? 'Liga' : 'Gruppenphase', count: pg.done + '/' + pg.total }
+    ];
+    if (GE.hasKo(t)) tabs.push({ key: 'ko', label: 'K.-o.-Runde' });
+    tabs.push({ key: 'final', label: 'Endstand' }, { key: 'info', label: 'Infos & Regeln' });
+    return tabs;
+  }
+
+  function renderGenericTournament(t, tab) {
+    var h = '<nav class="tabs">';
+    genericTabs(t).forEach(function (x) {
+      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="#/t/' + esc(t.id) + '/' + x.key + '">' +
+        x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
+    });
+    h += '</nav>';
+    if (tab === 'spiele') return h + renderGStage(t);
+    if (tab === 'ko' && GE.hasKo(t)) return h + renderGKo(t);
+    if (tab === 'final') return h + renderGFinal(t);
+    if (tab === 'info') return h + renderInfo(t);
+    return h + renderGSetup(t);
+  }
+
+  function planText(t) {
+    var plan = GE.koPlan(t);
+    if (fmt(t) === 'league') {
+      return plan.size ? 'Die besten ' + plan.size + ' der Tabelle spielen K.-o. (1. gegen ' + plan.size + '., 2. gegen ' + (plan.size - 1) + '. …).' : 'Ohne K.-o.-Runde: Die Tabelle ist der Endstand.';
+    }
+    if (plan.size < 2) return 'Zu wenige Teams für eine K.-o.-Runde.';
+    var adv = t.config.advance;
+    var txt = 'K.-o.-Runde mit ' + plan.size + ' Teams: die ersten ' + adv + ' jeder Gruppe';
+    if (plan.fill) txt += ' plus die ' + plan.fill + ' besten Gruppen-' + (adv + 1) + '.';
+    else txt += '.';
+    if (plan.cut) txt += ' Achtung: ' + plan.cut + ' Gruppen-Qualifikant(en) passen nicht in den Baum – die schwächsten scheiden aus.';
+    return txt;
+  }
+
+  function renderGSetup(t) {
+    var locked = GE.hasResults(t);
+    var dis = locked ? ' disabled' : '';
+    var f = fmt(t);
+    var h = '<div class="card"><h3>Turnierdaten</h3><div class="form-grid">' +
+      textField('Name', 'name', t.name) +
+      '<label class="field">Datum<input type="date" id="f-date" data-field="date" value="' + esc(t.date) + '"></label>' +
+      textField('Ort', 'venue', t.venue) +
+      textField('Jahrgang', 'ageGroup', t.ageGroup) +
+      '</div>' +
+      '<div class="logo-field"><span class="field-label">Turnierlogo</span>' + logoButton('tournament', t.id, t.logo, 'Turnierlogo') +
+      (t.logo ? '<button class="btn small danger" data-action="remove-logo" data-target="tournament" data-id="' + esc(t.id) + '">Entfernen</button>' : '<span class="muted small">Optional – wird automatisch verkleinert.</span>') +
+      '</div></div>';
+
+    h += '<h2>Modus: ' + esc(GE.formatInfo(f).name) + '</h2><div class="card">';
+    if (locked) h += '<div class="banner info">Es sind schon Ergebnisse eingetragen – Teamanzahl, Gruppen und Modus-Einstellungen sind gesperrt. Teamnamen und Logos kannst du weiter ändern.</div>';
+    h += '<div class="form-grid">' +
+      '<label class="field">Anzahl Teams<input type="number" id="g-teamCount" data-gstruct="teamCount" min="' + GE.MIN_TEAMS + '" max="' + GE.MAX_TEAMS + '" value="' + t.teams.length + '"' + dis + '></label>';
+    if (f === 'groups') {
+      h += '<label class="field">Anzahl Gruppen<input type="number" id="g-groupCount" data-gstruct="groupCount" min="1" max="' + Math.max(1, Math.floor(t.teams.length / 2)) + '" value="' + t.groups.length + '"' + dis + '></label>' +
+        '<label class="field">Weiter pro Gruppe<input type="number" id="g-advance" data-gconf="advance" min="1" max="' + GE.GROUP_MAX + '" value="' + esc(t.config.advance) + '"' + dis + '></label>';
+    } else {
+      h += '<label class="field">K.-o.-Runde<select id="g-koSize" data-gconf="koSize"' + dis + '>' +
+        [[0, 'Keine'], [2, 'Finale (Top 2)'], [4, 'Halbfinale (Top 4)'], [8, 'Viertelfinale (Top 8)'], [16, 'Achtelfinale (Top 16)']].filter(function (o) { return o[0] <= t.teams.length; }).map(function (o) {
+          return '<option value="' + o[0] + '"' + (String(t.config.koSize) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>';
+        }).join('') + '</select></label>' +
+        '<label class="field check"><span>Hin- und Rückrunde</span><input type="checkbox" id="g-double" data-gconf="double"' + (t.config.double ? ' checked' : '') + dis + '></label>';
+    }
+    if (GE.hasKo(t)) {
+      h += '<label class="field">Platzierungsspiele<select id="g-placement" data-gconf="placement"' + (t.koSeeds && GE.hasResults(t) && Object.keys(t.results).some(function (k) { return k.indexOf('ko') === 0; }) ? ' disabled' : '') + '>' +
+        GE.PLACEMENTS.map(function (p) { return '<option value="' + p.key + '"' + (t.config.placement === p.key ? ' selected' : '') + '>' + p.label + '</option>'; }).join('') + '</select></label>';
+    }
+    h += '</div><p class="muted small" style="margin-bottom:0">' + esc(planText(t)) + ' Spiele insgesamt: ' + (GE.stageGames(t).length + (GE.hasKo(t) ? GE.koDefs(t).length : 0)) + '.</p></div>';
+
+    h += '<h2>Spielbetrieb</h2><div class="card"><div class="form-grid">' +
+      numField('Spielfelder', 'fields', t.config.fields, 1, 16) +
+      numField('Spielzeit (Minuten)', 'gameMinutes', t.config.gameMinutes, 1, 90) +
+      numField('Takt pro Spielrunde (Minuten)', 'slotMinutes', t.config.slotMinutes, 1, 120) +
+      numField('Pause vor K.-o.-Runde (Minuten)', 'pauseMinutes', t.config.pauseMinutes, 0, 240) +
+      '</div><p class="muted small">Takt = Spielzeit + Wechselzeit. Die Spiele werden automatisch auf die Felder verteilt – möglichst ohne zwei Spiele eines Teams direkt hintereinander.</p>' +
+      '<h3 style="margin-top:14px">Zeiten</h3><div class="form-grid">' +
+      '<label class="field">Turnierbeginn<input type="time" id="f-time-start" data-time="start" value="' + esc(t.config.times.start || '') + '"></label>' +
+      (GE.hasKo(t) ? '<label class="field">Beginn K.-o.-Runde (leer = automatisch)<input type="time" id="f-time-ko" data-time="ko" value="' + esc(t.config.times.ko || '') + '"></label>' : '') +
+      '<label class="field">Siegerehrung (optional)<input type="time" id="f-time-ceremony" data-time="ceremony" value="' + esc(t.config.times.ceremony || '') + '"></label>' +
+      '</div></div>';
+
+    h += '<h2>' + (f === 'league' ? 'Teams' : 'Teams & Gruppen') + '</h2>';
+    var warns = GE.groupWarnings(t);
+    if (warns.length) h += '<div class="banner warn">' + warns.map(esc).join('<br>') + '</div>';
+    if (f === 'groups') {
+      h += '<div class="btn-row no-print" style="margin-bottom:12px">' +
+        '<button class="btn" data-action="gdraw"' + dis + '>Gruppen zufällig auslosen</button>' +
+        '<span class="muted small">Oder von Hand: bei jedem Team die Gruppe auswählen. „+ Logo“ antippen für ein Vereinslogo.</span></div>';
+    } else {
+      h += '<p class="muted small">„+ Logo“ antippen, um ein Vereinslogo hochzuladen.</p>';
+    }
+    h += '<div class="group-grid">';
+    t.groups.forEach(function (g, gi) {
+      h += '<div class="card group-card"><h3>' + (f === 'league' ? 'Teams' : esc(GE.groupName(gi)) + ' <span class="muted small">(' + g.length + ')</span>') + '</h3>';
+      g.forEach(function (id) {
+        var tm = teamObj(t, id);
+        h += '<div class="team-row">' + logoButton('team', id, tm.logo, 'Logo ' + tm.name) +
+          '<input type="text" id="team-' + esc(id) + '" data-team="' + esc(id) + '" value="' + esc(tm.name) + '" aria-label="Teamname">' +
+          (f === 'groups' ? '<select class="move" id="mv-' + esc(id) + '" data-move="' + esc(id) + '" aria-label="Gruppe"' + dis + '>' +
+            t.groups.map(function (_, k) { return '<option value="' + k + '"' + (k === gi ? ' selected' : '') + '>' + String.fromCharCode(65 + k) + '</option>'; }).join('') + '</select>' : '') +
+          (tm.logo ? '<button class="icon-btn" data-action="remove-logo" data-target="team" data-id="' + esc(id) + '" title="Logo entfernen" aria-label="Logo entfernen">✕</button>' : '') +
+          '</div>';
+      });
+      h += '</div>';
+    });
+    h += '</div>';
+    h += '<h2>Turnier verwalten</h2><div class="card btn-row">' +
+      '<button class="btn" data-action="duplicate" data-id="' + esc(t.id) + '">Als Vorlage für neues Turnier kopieren</button>' +
+      '<button class="btn danger" data-action="reset-results">Alle Ergebnisse zurücksetzen</button>' +
+      '<button class="btn danger" data-action="delete" data-id="' + esc(t.id) + '">Turnier löschen</button></div>';
+    return h;
+  }
+
+  function renderGTables(t) {
+    var plan = GE.koPlan(t);
+    var h = '';
+    GE.allStandings(t).forEach(function (st, g) {
+      var title = fmt(t) === 'league' ? 'Tabelle' : GE.groupName(g);
+      var qual = fmt(t) === 'league' ? plan.size : (plan.size ? Math.min(t.config.advance, st.rows.length) : 0);
+      h += '<div class="card' + (fmt(t) === 'league' ? ' wide' : '') + '">' + (fmt(t) === 'league' ? '' : '<h3>' + esc(title) + '</h3>') + '<table class="standings"><thead><tr>' +
+        '<th class="l">#</th><th class="l">Team</th><th title="Spiele">Sp</th><th title="Siege-Unentschieden-Niederlagen">S-U-N</th><th>Tore</th><th title="Tordifferenz">TD</th><th>Pkt</th></tr></thead><tbody>';
+      st.rows.forEach(function (r, i) {
+        var cls = i < qual ? ' class="q"' : (plan.fill && i === t.config.advance && fmt(t) === 'groups' ? ' class="q-maybe"' : '');
+        h += '<tr' + cls + '><td class="l">' + (i + 1) + '</td><td class="l team">' + teamHtml(t, r.team) +
+          (r.note && st.complete ? '<span class="note">(' + esc(r.note) + ')</span>' : '') + '</td><td>' + r.sp + '</td><td>' +
+          r.s + '-' + r.u + '-' + r.n + '</td><td>' + r.gf + ':' + r.ga + '</td><td>' + (r.td > 0 ? '+' : '') + r.td +
+          '</td><td class="pts">' + r.pts + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    });
+    return h;
+  }
+
+  function renderGStage(t) {
+    var games = GE.stageGames(t);
+    var prog = GE.stageProgress(t, games);
+    var complete = prog.done === prog.total && prog.total > 0;
+    var h = '<div class="muted small">' + prog.done + ' von ' + prog.total + ' Spielen eingetragen</div>' +
+      '<div class="progress"><span style="width:' + Math.round(prog.done / Math.max(1, prog.total) * 100) + '%"></span></div>';
+    if (t.koSeeds && complete && !sameGroups(t.koSeeds, GE.computeKoSeeds(t))) {
+      h += '<div class="banner warn" style="margin-top:12px">Durch eine Korrektur passen die Tabellen nicht mehr zur festgelegten K.-o.-Runde. ' +
+        '<button class="btn small" data-action="lock-ko">K.-o.-Runde neu festlegen</button></div>';
+    }
+    h += '<h2>' + (fmt(t) === 'league' ? 'Tabelle' : 'Tabellen') + '</h2><div id="tables" class="tables-grid">' + renderGTables(t) + '</div>';
+    h += '<p class="muted small">Platzierung: ' + esc(TL.TIEBREAK_TEXT) + '.' + (GE.hasKo(t) ? ' Grün markiert = K.-o.-Runde' + (GE.koPlan(t).fill ? ', gelb = Chance als bester Nachrücker' : '') + '.' : '') + '</p>';
+
+    h += '<h2>Spielplan</h2>';
+    var slots = {};
+    games.forEach(function (g) { (slots[g.slot] = slots[g.slot] || []).push(g); });
+    Object.keys(slots).forEach(function (s) {
+      var list = slots[s];
+      h += '<div class="slot"><div class="slot-head">' + esc(list[0].time) + ' Uhr <span class="muted">Runde ' + (parseInt(s, 10) + 1) + '</span></div><div class="games">';
+      list.forEach(function (g) { h += renderGame(t, g, g.groupLabel); });
+      h += '</div></div>';
+    });
+
+    h += '<div class="btn-row no-print" style="margin-top:18px">';
+    if (GE.hasKo(t)) {
+      h += t.koSeeds
+        ? '<a class="btn primary" href="#/t/' + esc(t.id) + '/ko">Weiter zur K.-o.-Runde</a>'
+        : '<button class="btn primary" data-action="lock-ko"' + (complete ? '' : ' disabled') + '>K.-o.-Runde festlegen</button>';
+    } else {
+      h += '<a class="btn primary" href="#/t/' + esc(t.id) + '/final">Zum Endstand</a>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function renderGKo(t) {
+    var h = '';
+    if (!t.koSeeds) {
+      var ok = GE.stageComplete(t);
+      h += '<div class="banner info">' + esc(planText(t)) + ' Gesetzt wird nach Gruppenplatz, dann nach Punkten, Tordifferenz und Toren pro Spiel – Setzplatz 1 trifft auf den letzten Setzplatz. Teams aus derselben Gruppe treffen in der ersten Runde möglichst nicht aufeinander.</div>' +
+        '<div class="btn-row" style="margin-bottom:14px"><button class="btn primary" data-action="lock-ko"' + (ok ? '' : ' disabled') + '>K.-o.-Runde festlegen</button>' +
+        (ok ? '' : '<span class="muted small">Möglich, sobald alle Spiele der ' + (fmt(t) === 'league' ? 'Liga' : 'Gruppenphase') + ' eingetragen sind.</span>') + '</div>';
+    } else {
+      h += '<p class="muted small">Unentschieden: Ergebnis eintragen und den Sieger des Neunmeterschießens auswählen.</p>';
+    }
+    GE.koSections(t, GE.koGames(t)).forEach(function (sec) {
+      h += '<div class="slot"><h2>' + esc(sec.title) + ' <span class="muted small">ab ' + esc(sec.games[0].time) + ' Uhr</span></h2><div class="games">';
+      sec.games.forEach(function (g) { h += '<div class="ko-label">' + esc(g.label) + '</div>' + renderGame(t, g, '', true); });
+      h += '</div></div>';
+    });
+    if (t.koSeeds) h += '<div class="btn-row no-print" style="margin-top:18px"><a class="btn primary" href="#/t/' + esc(t.id) + '/final">Zum Endstand</a>' +
+      '<button class="btn danger" data-action="unlock-ko">Festlegung K.-o.-Runde aufheben</button></div>';
+    return h;
+  }
+
+  function renderGFinal(t) {
+    var fr = GE.finalRanking(t);
+    var h = '<img class="hero hero-final" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
+      '<h2 style="margin-top:0">Endstand</h2>';
+    if (fr.provisional) h += '<div class="banner info">Vorläufig – es sind noch nicht alle Spiele eingetragen.</div>';
+    h += '<ol class="ranking">';
+    fr.places.forEach(function (r) {
+      h += '<li class="p' + r.place + '"><span class="place">' + r.place + '</span>' +
+        (r.team ? teamHtml(t, r.team) : '<span class="open">noch offen</span>') + '</li>';
+    });
+    return h + '</ol>';
   }
 
   /* ----- GitHub-Speicher ----- */
@@ -581,14 +813,25 @@
     go('#/t/' + t.id + '/ko');
   }
 
+  function lockKoGeneric(t) {
+    if (!GE.stageComplete(t)) return;
+    if (TL.hasResultsWithPrefix(t, 'ko') && !confirm('Die K.-o.-Runde wird neu gebildet. Bereits eingetragene K.-o.-Ergebnisse werden gelöscht. Fortfahren?')) return;
+    clearResults(t, 'ko');
+    t.koSeeds = GE.computeKoSeeds(t);
+    save(t);
+    go('#/t/' + t.id + '/ko');
+  }
+
   var actions = {
     'toggle-new': function () { state.showNewForm = !state.showNewForm; render(); var n = document.getElementById('new-name'); if (n) n.focus(); },
     'create': function () {
-      var t = TL.createTournament({
+      var format = document.getElementById('new-format').value;
+      var t = GE.createTournament(format, {
         name: document.getElementById('new-name').value.trim() || 'Neues Turnier',
         date: document.getElementById('new-date').value,
         venue: document.getElementById('new-venue').value.trim(),
-        ageGroup: document.getElementById('new-age').value.trim()
+        ageGroup: document.getElementById('new-age').value.trim(),
+        teamCount: parseInt(document.getElementById('new-teams').value, 10) || 16
       });
       state.tournaments.push(t);
       state.showNewForm = false;
@@ -675,7 +918,11 @@
       save(t); render();
     },
     'lock-groups2': function () { var t = currentTournament(); if (t) lockGroups2(t); },
-    'lock-ko': function () { var t = currentTournament(); if (t) lockKo(t); },
+    'lock-ko': function () { var t = currentTournament(); if (t) (isAndi(t) ? lockKo : lockKoGeneric)(t); },
+    'gdraw': function () {
+      var t = currentTournament();
+      if (t && GE.drawGroups(t)) { save(t); render(); }
+    },
     'unlock-groups2': function () {
       var t = currentTournament();
       if (!t) return;
@@ -719,6 +966,7 @@
       else t.results[el.dataset.game] = r;
       save(t);
       if (el.dataset.game.indexOf('ko') === 0) return; // Finalrunde: Aktualisierung beim Verlassen des Feldes
+      if (!isAndi(t)) { updateGenericLive(t, el, r); return; }
       var tables = document.getElementById('tables');
       var phase = el.dataset.game.charAt(1) === '1' ? 1 : 2;
       if (tables) tables.innerHTML = renderTables(t, phase);
@@ -746,7 +994,7 @@
     }
     if (el.dataset.config) {
       var n = parseInt(el.value, 10);
-      if (n > 0) { t.config[el.dataset.config] = n; save(t); }
+      if (n > 0 || (n === 0 && el.dataset.config === 'pauseMinutes')) { t.config[el.dataset.config] = n; save(t); }
       return;
     }
     if (el.dataset.time) {
@@ -759,10 +1007,52 @@
     }
   });
 
+  function updateGenericLive(t, el, r) {
+    var tables = document.getElementById('tables');
+    if (tables) tables.innerHTML = renderGTables(t);
+    el.closest('.game').classList.toggle('done', TL.isPlayed(r));
+    var prog = GE.stageProgress(t);
+    var bar = app.querySelector('.progress > span');
+    if (bar) bar.style.width = Math.round(prog.done / Math.max(1, prog.total) * 100) + '%';
+    var info = bar && bar.parentNode.previousElementSibling;
+    if (info) info.textContent = prog.done + ' von ' + prog.total + ' Spielen eingetragen';
+    var tab = app.querySelector('.tab.active .count');
+    if (tab) tab.textContent = prog.done + '/' + prog.total;
+    var lockBtn = app.querySelector('[data-action="lock-ko"]');
+    if (lockBtn && !t.koSeeds) lockBtn.disabled = prog.done !== prog.total;
+  }
+
   app.addEventListener('change', function (e) {
     var el = e.target;
+    if (el.id === 'new-format') {
+      state.newFormat = el.value;
+      var nt = document.getElementById('new-teams');
+      if (el.value === 'andi') { nt.value = 16; nt.disabled = true; } else { nt.disabled = false; nt.value = state.newTeams; }
+      document.getElementById('new-format-desc').textContent = GE.formatInfo(el.value).desc;
+      return;
+    }
+    if (el.id === 'new-teams') { state.newTeams = parseInt(el.value, 10) || 16; return; }
     var t = currentTournament();
     if (!t) return;
+    if (el.dataset.gstruct) {
+      var v = parseInt(el.value, 10);
+      if (el.dataset.gstruct === 'teamCount') GE.setTeamCount(t, v);
+      else GE.setGroupCount(t, v);
+      save(t); render(); return;
+    }
+    if (el.dataset.gconf) {
+      var key = el.dataset.gconf;
+      if (key === 'double') t.config.double = el.checked;
+      else if (key === 'placement') t.config.placement = el.value;
+      else t.config[key] = Math.max(0, parseInt(el.value, 10) || 0);
+      if (key === 'advance') t.config.advance = Math.max(1, t.config.advance);
+      if (key !== 'placement') t.koSeeds = null;
+      save(t); render(); return;
+    }
+    if (el.dataset.move) {
+      GE.moveTeam(t, el.dataset.move, parseInt(el.value, 10));
+      save(t); render(); return;
+    }
     if (el.dataset.pen) {
       var r = t.results[el.dataset.pen];
       if (r) { if (el.value) r.pen = el.value; else delete r.pen; }
@@ -797,7 +1087,7 @@
     reader.onload = function () {
       var t;
       try { t = JSON.parse(reader.result); } catch (err) { alert('Die Datei konnte nicht gelesen werden.'); return; }
-      var problem = TL.validateTournament(t);
+      var problem = TL.validateTournament(t) || (t && t.format && t.format !== 'andi' ? GE.validate(t) : null);
       if (problem) { alert(problem); return; }
       delete t._sync; delete t._dirty;
       if (find(t.id)) {
@@ -807,7 +1097,7 @@
       }
       state.tournaments.push(t);
       save(t);
-      go('#/t/' + t.id + '/p1');
+      go('#/t/' + t.id + '/' + openTab(t));
     };
     reader.readAsText(file);
   });
