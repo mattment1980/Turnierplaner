@@ -272,6 +272,12 @@
     });
     if (!local.groups2 && remote.groups2) { local.groups2 = remote.groups2; changed = true; }
     if (!local.koSeeds && remote.koSeeds) { local.koSeeds = remote.koSeeds; changed = true; }
+    if (local.stages && remote.stages) {
+      [2, 3].forEach(function (r) { if (!local.stages[r] && remote.stages[r]) { local.stages[r] = remote.stages[r]; changed = true; } });
+    }
+    if (local.po && remote.po) {
+      Object.keys(remote.po).forEach(function (k) { if (!local.po[k]) { local.po[k] = remote.po[k]; changed = true; } });
+    }
     return changed;
   }
 

@@ -206,6 +206,20 @@ table.standings tr.q-maybe td:first-child { box-shadow: inset 3px 0 0 #e0a100; }
 label.field.check { display: flex; align-items: center; gap: 10px; align-self: end; padding-bottom: 8px; }
 label.field.check input { width: 20px; height: 20px; }
 
+/* Mehrstufig */
+.branch-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.branch-badge { display: inline-block; padding: 3px 12px; border-radius: 99px; font-size: 14px; font-weight: 800; color: #fff; letter-spacing: .2px; }
+.b-r1 { background: var(--green-2); }
+.b-gold { background: #b8901a; }
+.b-silver { background: #7d878d; }
+.b-bronze { background: #9a5a2c; }
+.b-cl { background: #1b2f7a; }
+.b-el { background: #d96a00; }
+.b-conf { background: #13856f; }
+.branch-jump { margin: 10px 0 0; }
+.loc-row { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; align-items: end; margin-bottom: 8px; }
+@media (max-width: 640px) { .loc-row { grid-template-columns: 1fr 90px auto; } }
+
 /* Spielplan */
 .slot { margin-bottom: 14px; }
 .slot-head { font-weight: 700; font-size: 14px; color: var(--green); margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }

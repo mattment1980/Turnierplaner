@@ -1,6 +1,6 @@
 # Turnierplaner
 
-Web-Tool für Jugend-Fußballturniere – Liga, WM-Format oder „Andi Spezial“ (entstanden aus einer Excel-Vorlage für ein U9-Hallenturnier).
+Web-Tool für Jugend-Fußballturniere – Liga, WM-Format, Mehrstufig oder „Andi Spezial“ (entstanden aus einer Excel-Vorlage für ein U9-Hallenturnier).
 
 ## Turniermodi
 
@@ -17,6 +17,16 @@ Web-Tool für Jugend-Fußballturniere – Liga, WM-Format oder „Andi Spezial�
 - Gruppen mit 3–10 Teams (auch unterschiedlich groß), von Hand eingeteilt oder ausgelost.
 - Pro Gruppe kommen X Teams weiter. Ist das keine 2er-Potenz, rücken die besten Gruppen-Nächsten nach (wie die besten Gruppendritten bei der EM), bewertet nach Punkten, Tordifferenz und Toren pro Spiel.
 - Setzliste nach Gruppenplatz und Leistung, Teams aus derselben Gruppe treffen in Runde 1 möglichst nicht aufeinander.
+
+**Mehrstufig** (16, 32 oder 64 Teams, auch über 2 Tage und mehrere Orte)
+- Runde 1: 4er-Gruppen (Hand oder Auslosung).
+- 16 Teams: Runde 2 Gold (1.+2.) und Silber (3.+4.), je 2 Gruppen à 4, danach Playoffs → Gold Plätze 1–8, Silber 9–16.
+- 32/64 Teams: Runde 2 Gold (alle 1.), Silber (2.+3.), Bronze (alle 4.). Runde 3:
+  Champions League (Gold 1–3 + Silber 1, Gruppen à 5), Europa League (Silber 2+3, Bronze 1, Gold 4, Gruppen à 6),
+  Conference League (Silber 4 + Bronze 2–4, Gruppen à 5), danach Playoffs – jedes Team hat mindestens 2 Playoff-Spiele.
+  Endstand: CL vor EL vor Conference.
+- Gruppen der Runden 2/3: Setzung nach Leistung im Schlangenverfahren, Wiederholungsspiele aus der Vorrunde werden soweit möglich vermieden.
+- Beliebig viele Orte mit eigener Feldzahl; jede Leistungsgruppe einem Ort zuordnen, Runde 1 auf alle Orte verteilbar; Datum und Beginn je Runde.
 
 **K.-o.-Runde** (Liga & WM): wählbar „nur Finale“, „Finale + Spiel um Platz 3“ oder „alle Plätze ausspielen“. Unentschieden → Neunmeterschießen.
 
@@ -64,10 +74,11 @@ Zusätzlich gibt es Export/Import als JSON-Datei.
 ```
 js/logic.js   Andi Spezial (Spielplan, Tabellen, Mischung, Finalrunde) – ohne DOM
 js/engine.js  Liga & WM-Format (Rundenturnier, Zeitplan, K.-o.-Baum, Endstand)
+js/multi.js   Mehrstufig (Runden, Leistungsgruppen, Playoffs, Orte & Termine)
 js/app.js     Oberfläche
 js/sync.js    Speichern auf GitHub (Contents-API, Branch "data")
 css/style.css Styles
 tests/        Tests der Turnierlogik
 ```
 
-Tests: `node --test tests/logic.test.js tests/engine.test.js`
+Tests: `node --test tests/logic.test.js tests/engine.test.js tests/multi.test.js`

@@ -122,13 +122,29 @@
 
   function fmt(t) { return t.format || 'andi'; }
   function isAndi(t) { return fmt(t) === 'andi'; }
+  function isMulti(t) { return fmt(t) === 'multi'; }
+
+  function firstPlayTab(t) { return isAndi(t) ? 'p1' : isMulti(t) ? 'r1' : 'spiele'; }
 
   function openTab(t) {
     if (isAndi(t)) return t.groups2 || TL.phaseProgress(t, 1).done ? 'p1' : 'setup';
+    if (isMulti(t)) return GE.hasResults(t) ? 'r1' : 'setup';
     return GE.hasResults(t) ? 'spiele' : 'setup';
   }
 
   function statusText(t) {
+    if (isMulti(t)) {
+      if (ME.finalRanking(t).places.every(function (p) { return p.team; })) return 'Abgeschlossen';
+      if (Object.keys(t.po || {}).length) return 'Playoffs';
+      var tlm = ME.timeline(t);
+      for (var r = 3; r >= 1; r--) {
+        if (r === 1 || (t.stages && t.stages[r])) {
+          var rp = ME.roundProgress(t, r, tlm);
+          if (r > 1 || rp.done) return 'Runde ' + r + ' · ' + rp.done + '/' + rp.total;
+        }
+      }
+      return 'In Vorbereitung';
+    }
     if (!isAndi(t)) {
       var fr = GE.finalRanking(t);
       if (fr.places[0].team && !fr.provisional && (!GE.hasKo(t) || t.koSeeds)) return 'Abgeschlossen';
@@ -190,13 +206,21 @@
     });
   }
 
+  function newTeamsInput(format) {
+    if (format === 'multi') {
+      var v = ME.SIZES.indexOf(state.newTeams) >= 0 ? state.newTeams : 32;
+      return '<select id="new-teams">' + ME.SIZES.map(function (n) { return '<option value="' + n + '"' + (n === v ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>';
+    }
+    return '<input type="number" id="new-teams" min="' + GE.MIN_TEAMS + '" max="' + GE.MAX_TEAMS + '" value="' + (format === 'andi' ? 16 : state.newTeams) + '"' + (format === 'andi' ? ' disabled' : '') + '>';
+  }
+
   function renderHome() {
     var list = state.tournaments.slice().sort(function (a, b) {
       return (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '');
     });
     var h = '<img class="hero" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
       '<div class="t-head"><div><h1>Meine Turniere</h1>' +
-      '<div class="muted">Liga, WM-Format oder Andi Spezial – mit Spielplan, Tabellen, K.-o.-Runde und Endstand</div></div>' +
+      '<div class="muted">Liga, WM-Format, Mehrstufig oder Andi Spezial – mit Spielplan, Tabellen, K.-o.-Runde und Endstand</div></div>' +
       '<div class="btn-row"><button class="btn primary" data-action="toggle-new">+ Neues Turnier</button>' +
       '<button class="btn" data-action="import">Importieren</button></div></div>' +
       '<div class="sync-line">' + syncBadge(Sync.globalStatus(), '') +
@@ -212,7 +236,7 @@
         '<label class="field">Modus<select id="new-format">' + GE.FORMATS.map(function (f) {
           return '<option value="' + f.key + '"' + (f.key === state.newFormat ? ' selected' : '') + '>' + esc(f.name) + '</option>';
         }).join('') + '</select></label>' +
-        '<label class="field">Anzahl Teams<input type="number" id="new-teams" min="' + GE.MIN_TEAMS + '" max="' + GE.MAX_TEAMS + '" value="' + (state.newFormat === 'andi' ? 16 : state.newTeams) + '"' + (state.newFormat === 'andi' ? ' disabled' : '') + '></label>' +
+        '<label class="field">Anzahl Teams<span id="new-teams-wrap">' + newTeamsInput(state.newFormat) + '</span></label>' +
         '</div><p class="muted small" id="new-format-desc">' + esc(GE.formatInfo(state.newFormat).desc) + '</p>' +
         '<div class="btn-row" style="margin-top:12px">' +
         '<button class="btn primary" data-action="create">Anlegen</button>' +
@@ -230,7 +254,7 @@
         '<div class="muted small">' + esc(GE.formatInfo(fmt(t)).name + ' · ' + t.teams.length + ' Teams') + '</div>' +
         '<span class="status-pill">' + esc(statusText(t)) + '</span>' +
         '<div class="btn-row">' +
-        '<a class="btn small" href="#/t/' + esc(t.id) + '/' + (isAndi(t) ? 'p1' : 'spiele') + '">Öffnen</a>' +
+        '<a class="btn small" href="#/t/' + esc(t.id) + '/' + firstPlayTab(t) + '">Öffnen</a>' +
         '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
         '<button class="btn small" data-action="duplicate" data-id="' + esc(t.id) + '">Als Vorlage kopieren</button>' +
         '<button class="btn small danger" data-action="delete" data-id="' + esc(t.id) + '">Löschen</button>' +
@@ -257,6 +281,7 @@
       '<div class="sync-line no-print">' + syncBadge(Sync.statusFor(t), t.id) +
       (Sync.enabled() ? ' <button class="btn small" data-action="sync-now">Jetzt speichern</button>' : ' <a href="#/github" class="small">GitHub-Speicher einrichten</a>') + '</div>';
 
+    if (isMulti(t)) return h + renderMultiTournament(t, tab);
     if (!isAndi(t)) return h + renderGenericTournament(t, tab);
 
     h += '<nav class="tabs">';
@@ -513,14 +538,14 @@
     var h = '<div class="card"><dl class="info">' +
       '<dt>Jahrgang</dt><dd>' + esc(t.ageGroup || '–') + '</dd>' +
       '<dt>Modus</dt><dd>' + esc(GE.formatInfo(fmt(t)).name) + '</dd>' +
-      '<dt>Teams</dt><dd>' + (isAndi(t) ? '16 (4 Gruppen à 4)' : t.teams.length + (fmt(t) === 'groups' ? ' (' + t.groups.map(function (g) { return g.length; }).join(' + ') + ')' : '') + (fmt(t) === 'league' && t.config.double ? ', Hin- und Rückrunde' : '')) + '</dd>' +
-      '<dt>Spielfelder</dt><dd>' + esc(t.config.fields) + '</dd>' +
+      '<dt>Teams</dt><dd>' + (isAndi(t) ? '16 (4 Gruppen à 4)' : isMulti(t) ? t.teams.length + '</dd><dt>Ablauf</dt><dd>' + esc(ME.structureText(t)) : t.teams.length + (fmt(t) === 'groups' ? ' (' + t.groups.map(function (g) { return g.length; }).join(' + ') + ')' : '') + (fmt(t) === 'league' && t.config.double ? ', Hin- und Rückrunde' : '')) + '</dd>' +
+      '<dt>Spielfelder</dt><dd>' + (isMulti(t) ? esc(ME.locations(t).map(function (l) { return l.name + ': ' + l.fields; }).join(' · ')) : esc(t.config.fields)) + '</dd>' +
       '<dt>Spielzeit</dt><dd>' + esc(t.config.gameMinutes) + ' min</dd>' +
       '<dt>Platzierung</dt><dd>' + esc(TL.TIEBREAK_TEXT) + (isAndi(t) ? ' (je Gruppenphase getrennt)' : '') + '</dd>' +
-      (!isAndi(t) && GE.hasKo(t) ? '<dt>K.-o.-Runde</dt><dd>' + esc(planText(t)) + '</dd>' : '') +
+      (!isAndi(t) && !isMulti(t) && GE.hasKo(t) ? '<dt>K.-o.-Runde</dt><dd>' + esc(planText(t)) + '</dd>' : '') +
       '</dl></div>';
     h += '<h2>Ablauf / Zeitplan</h2><div class="card"><dl class="info">';
-    (isAndi(t) ? TL.timetable(t) : GE.timetable(t)).forEach(function (r) { h += '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value || '–') + '</dd>'; });
+    (isAndi(t) ? TL.timetable(t) : isMulti(t) ? ME.timetable(t) : GE.timetable(t)).forEach(function (r) { h += '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value || '–') + '</dd>'; });
     h += '</dl><p class="muted small">Wird automatisch aus den Startzeiten und dem Takt berechnet.</p></div>';
 
     h += '<h2>Spielregeln</h2><div class="card">';
@@ -740,6 +765,271 @@
     return h + '</ol>';
   }
 
+  /* ===== Mehrstufig ===== */
+
+  var BRANCH_CLASS = { r1: 'r1', gold: 'gold', silver: 'silver', bronze: 'bronze', cl: 'cl', el: 'el', conf: 'conf' };
+
+  function branchBadge(key) {
+    return '<span class="branch-badge b-' + BRANCH_CLASS[key] + '">' + esc(ME.BRANCHES[key].name) + '</span>';
+  }
+
+  function multiTabs(t, tl) {
+    var tabs = [{ key: 'setup', label: 'Teams & Einstellungen' }];
+    ME.rounds(t).forEach(function (r) {
+      var p = ME.roundProgress(t, r, tl);
+      tabs.push({ key: 'r' + r, label: 'Runde ' + r, count: (r === 1 || t.stages[r]) ? p.done + '/' + p.total : '' });
+    });
+    tabs.push({ key: 'po', label: 'Playoffs' }, { key: 'final', label: 'Endstand' }, { key: 'info', label: 'Infos & Regeln' });
+    return tabs;
+  }
+
+  function renderMultiTournament(t, tab) {
+    var tl = ME.timeline(t);
+    var h = '<nav class="tabs">';
+    multiTabs(t, tl).forEach(function (x) {
+      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="#/t/' + esc(t.id) + '/' + x.key + '">' +
+        x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
+    });
+    h += '</nav>';
+    var m = /^r([123])$/.exec(tab);
+    if (m && ME.rounds(t).indexOf(+m[1]) >= 0) return h + renderMRound(t, +m[1], tl);
+    if (tab === 'po') return h + renderMPo(t, tl);
+    if (tab === 'final') return h + renderMFinal(t);
+    if (tab === 'info') return h + renderInfo(t);
+    return h + renderMSetup(t);
+  }
+
+  function multiLoc(t) { return ME.locations(t).length > 1; }
+
+  function slotHead(t, g) {
+    var parts = [];
+    if (g.date) parts.push(ME.fmtDate(g.date));
+    parts.push(g.time + ' Uhr');
+    var h = esc(parts.join(' · '));
+    if (multiLoc(t)) h += ' <span class="muted">' + esc(ME.locById(t, g.loc).name) + '</span>';
+    return h;
+  }
+
+  function gamesBySlot(t, games, meta) {
+    var h = '', key = null;
+    games.forEach(function (g) {
+      var k = g.date + '|' + g.time + '|' + g.loc;
+      if (k !== key) {
+        if (key !== null) h += '</div></div>';
+        h += '<div class="slot"><div class="slot-head">' + slotHead(t, g) + '</div><div class="games">';
+        key = k;
+      }
+      if (g.isKo) h += '<div class="ko-label">' + esc(g.label) + '</div>';
+      h += renderGame(t, g, meta(g), !!g.isKo);
+    });
+    if (key !== null) h += '</div></div>';
+    return h;
+  }
+
+  function renderMTables(t, r, branch, tl) {
+    var groups = ME.groupsOf(t, r, branch);
+    var h = '';
+    groups.forEach(function (_, g) {
+      var st = ME.standings(t, r, branch, g, tl);
+      h += '<div class="card"><h3>Gruppe ' + ME.groupLetter(g) + '</h3><table class="standings"><thead><tr>' +
+        '<th class="l">#</th><th class="l">Team</th><th title="Spiele">Sp</th><th title="Siege-Unentschieden-Niederlagen">S-U-N</th><th>Tore</th><th title="Tordifferenz">TD</th><th>Pkt</th></tr></thead><tbody>';
+      st.rows.forEach(function (row, i) {
+        h += '<tr><td class="l">' + (i + 1) + '</td><td class="l team">' + teamHtml(t, row.team) +
+          (row.note && st.complete ? '<span class="note">(' + esc(row.note) + ')</span>' : '') + '</td><td>' + row.sp + '</td><td>' +
+          row.s + '-' + row.u + '-' + row.n + '</td><td>' + row.gf + ':' + row.ga + '</td><td>' + (row.td > 0 ? '+' : '') + row.td +
+          '</td><td class="pts">' + row.pts + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    });
+    return h;
+  }
+
+  function renderMRound(t, r, tl) {
+    var h = '';
+    var last = ME.rounds(t)[ME.rounds(t).length - 1];
+    if (r > 1 && !t.stages[r]) {
+      var ready = ME.roundComplete(t, r - 1, tl);
+      h += '<div class="banner info">Die Gruppen der Runde ' + r + ' werden aus den Tabellen der Runde ' + (r - 1) + ' gebildet – gesetzt nach Leistung im Schlangenverfahren, ' +
+        'Teams aus derselben Gruppe der Vorrunde treffen möglichst nicht wieder aufeinander. Punkte und Tore beginnen wieder bei null.</div>' +
+        '<div class="btn-row" style="margin-bottom:14px"><button class="btn primary" data-action="mlock" data-round="' + r + '"' + (ready ? '' : ' disabled') + '>Runde ' + r + ' festlegen</button>' +
+        (ready ? '' : '<span class="muted small">Möglich, sobald alle Spiele der Runde ' + (r - 1) + ' eingetragen sind.</span>') + '</div>';
+      if (ready) {
+        var preview = ME.computeStage(t, r, tl);
+        h += '<h2>Vorschau</h2>';
+        ME.branchesOf(t, r).forEach(function (b) {
+          h += '<h3 class="branch-title">' + branchBadge(b.key) + '</h3><div class="group-grid" style="margin-bottom:14px">';
+          preview[b.key].forEach(function (grp, gi) {
+            h += '<div class="card group-card"><h3>Gruppe ' + ME.groupLetter(gi) + '</h3><ol>' +
+              grp.map(function (id) { return '<li>' + teamHtml(t, id) + '</li>'; }).join('') + '</ol></div>';
+          });
+          h += '</div>';
+        });
+      }
+      return h;
+    }
+    var prog = ME.roundProgress(t, r, tl);
+    h += '<div class="muted small" id="mprog-text">' + prog.done + ' von ' + prog.total + ' Spielen eingetragen</div>' +
+      '<div class="progress"><span id="mprog-bar" style="width:' + Math.round(prog.done / Math.max(1, prog.total) * 100) + '%"></span></div>';
+    var branches = ME.branchesOf(t, r);
+    if (branches.length > 1) {
+      h += '<div class="btn-row no-print branch-jump">' + branches.map(function (b) { return '<a class="btn small" href="#" data-action="jump" data-target="br-' + b.key + '">' + esc(ME.BRANCHES[b.key].name) + '</a>'; }).join('') + '</div>';
+    }
+    branches.forEach(function (b) {
+      var games = tl.filter(function (g) { return g.round === r && g.branch === b.key && !g.isKo; });
+      if (b.key !== 'r1') h += '<h2 id="br-' + b.key + '" class="branch-title">' + branchBadge(b.key) + (multiLoc(t) ? ' <span class="muted small">' + esc(ME.locById(t, t.config.place[b.key]).name) + '</span>' : '') + '</h2>';
+      h += '<div class="tables-grid" data-mtables="' + r + '-' + b.key + '">' + renderMTables(t, r, b.key, tl) + '</div>';
+      h += '<h3 style="margin-top:16px">Spielplan' + (b.key === 'r1' ? '' : ' ' + esc(ME.BRANCHES[b.key].name)) + '</h3>';
+      h += gamesBySlot(t, games, function (g) { return 'Gruppe ' + ME.groupLetter(g.group); });
+    });
+    h += '<p class="muted small">Platzierung: ' + esc(TL.TIEBREAK_TEXT) + '. Wertung nur innerhalb dieser Runde.</p>';
+    h += '<div class="btn-row no-print" style="margin-top:18px">';
+    if (r < last) {
+      h += t.stages[r + 1]
+        ? '<a class="btn primary" href="#/t/' + esc(t.id) + '/r' + (r + 1) + '">Weiter zu Runde ' + (r + 1) + '</a>'
+        : '<button class="btn primary" data-action="mlock" data-round="' + (r + 1) + '" data-next="1"' + (ME.roundComplete(t, r, tl) ? '' : ' disabled') + '>Runde ' + (r + 1) + ' festlegen</button>';
+    } else {
+      h += '<a class="btn primary" href="#/t/' + esc(t.id) + '/po">Weiter zu den Playoffs</a>';
+    }
+    if (r > 1) h += '<button class="btn danger" data-action="munlock" data-round="' + r + '">Festlegung Runde ' + r + ' aufheben</button>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderMPo(t, tl) {
+    var last = ME.rounds(t)[ME.rounds(t).length - 1];
+    var h = '<p class="muted small">Jede Leistungsgruppe startet ihre Playoffs, sobald ihre Gruppenspiele fertig sind. Unentschieden: Ergebnis eintragen und den Sieger des Neunmeterschießens auswählen.</p>';
+    var offset = 0;
+    ME.poBranches(t).forEach(function (b) {
+      var size = ME.poSize(t, b);
+      h += '<h2 class="branch-title">' + branchBadge(b) + ' <span class="muted small">Gesamtplätze ' + (offset + 1) + '–' + (offset + size) + (multiLoc(t) ? ' · ' + esc(ME.locById(t, t.config.place[b]).name) : '') + '</span></h2>';
+      offset += size;
+      if (!t.po[b]) {
+        var ready = ME.branchComplete(t, last, b, tl);
+        h += '<div class="btn-row" style="margin-bottom:10px"><button class="btn primary" data-action="mpo-lock" data-branch="' + b + '"' + (ready ? '' : ' disabled') + '>Playoffs ' + esc(ME.BRANCHES[b].name) + ' festlegen</button>' +
+          (ready ? '' : '<span class="muted small">Möglich, sobald alle Gruppenspiele ' + esc(ME.BRANCHES[b].name) + ' in Runde ' + last + ' eingetragen sind.</span>') + '</div>';
+      }
+      var games = tl.filter(function (g) { return g.isKo && g.branch === b; });
+      h += gamesBySlot(t, games, function () { return ''; });
+      if (t.po[b]) h += '<div class="btn-row no-print" style="margin:8px 0 18px"><button class="btn small danger" data-action="mpo-unlock" data-branch="' + b + '">Festlegung Playoffs ' + esc(ME.BRANCHES[b].name) + ' aufheben</button></div>';
+    });
+    h += '<div class="btn-row no-print" style="margin-top:18px"><a class="btn primary" href="#/t/' + esc(t.id) + '/final">Zum Endstand</a></div>';
+    return h;
+  }
+
+  function renderMFinal(t) {
+    var fr = ME.finalRanking(t);
+    var h = '<img class="hero hero-final" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
+      '<h2 style="margin-top:0">Endstand</h2>';
+    var current = null;
+    fr.places.forEach(function (p) {
+      if (p.branch !== current) {
+        if (current !== null) h += '</ol>';
+        h += '<h3 class="branch-title" style="margin-top:16px">' + branchBadge(p.branch) + '</h3><ol class="ranking">';
+        current = p.branch;
+      }
+      h += '<li class="p' + p.place + '"><span class="place">' + p.place + '</span>' +
+        (p.team ? teamHtml(t, p.team) : '<span class="open">noch offen</span>') + '</li>';
+    });
+    return h + '</ol>';
+  }
+
+  function renderMSetup(t) {
+    var locked = GE.hasResults(t);
+    var dis = locked ? ' disabled' : '';
+    var h = '<div class="card"><h3>Turnierdaten</h3><div class="form-grid">' +
+      textField('Name', 'name', t.name) +
+      '<label class="field">Datum<input type="date" id="f-date" data-field="date" value="' + esc(t.date) + '"></label>' +
+      textField('Ort', 'venue', t.venue) +
+      textField('Jahrgang', 'ageGroup', t.ageGroup) +
+      '</div>' +
+      '<div class="logo-field"><span class="field-label">Turnierlogo</span>' + logoButton('tournament', t.id, t.logo, 'Turnierlogo') +
+      (t.logo ? '<button class="btn small danger" data-action="remove-logo" data-target="tournament" data-id="' + esc(t.id) + '">Entfernen</button>' : '<span class="muted small">Optional – wird automatisch verkleinert.</span>') +
+      '</div></div>';
+
+    h += '<h2>Modus: Mehrstufig</h2><div class="card">';
+    if (locked) h += '<div class="banner info">Es sind schon Ergebnisse eingetragen – Teamanzahl und Gruppen sind gesperrt. Teamnamen, Logos, Orte und Zeiten kannst du weiter ändern.</div>';
+    h += '<div class="form-grid"><label class="field">Anzahl Teams<select id="m-teams" data-mstruct="teams"' + dis + '>' +
+      ME.SIZES.map(function (n) { return '<option value="' + n + '"' + (n === t.teams.length ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></label></div>' +
+      '<p class="muted small" style="margin-bottom:0">' + esc(ME.structureText(t)) + ' Spiele insgesamt: ' + ME.timeline(t).length + '.</p></div>';
+
+    // Orte
+    var locs = ME.locations(t);
+    h += '<h2>Orte & Spielfelder</h2><div class="card">';
+    locs.forEach(function (l) {
+      h += '<div class="loc-row"><label class="field">Ort<input type="text" id="loc-name-' + esc(l.id) + '" data-loc="' + esc(l.id) + '" data-lkey="name" value="' + esc(l.name) + '"></label>' +
+        '<label class="field">Spielfelder<input type="number" id="loc-fields-' + esc(l.id) + '" data-loc="' + esc(l.id) + '" data-lkey="fields" min="1" max="16" value="' + esc(l.fields) + '"></label>' +
+        (locs.length > 1 ? '<button class="btn small danger" data-action="loc-del" data-id="' + esc(l.id) + '">Entfernen</button>' : '<span></span>') + '</div>';
+    });
+    h += '<div class="btn-row" style="margin-top:6px"><button class="btn small" data-action="loc-add">+ Ort hinzufügen</button></div>';
+    if (locs.length > 1) {
+      h += '<h3 style="margin-top:16px">Wer spielt wo?</h3><div class="form-grid">';
+      var keys = ['r1'].concat(ME.branchesOf(t, 2).map(function (b) { return b.key; }));
+      if (ME.rounds(t).length === 3) keys = keys.concat(ME.branchesOf(t, 3).map(function (b) { return b.key; }));
+      keys.forEach(function (k) {
+        var cur = t.config.place[k] || (k === 'r1' ? 'all' : locs[0].id);
+        h += '<label class="field">' + (k === 'r1' ? 'Runde 1' : 'Runde ' + (['gold', 'silver', 'bronze'].indexOf(k) >= 0 ? 2 : 3) + ' · ' + esc(ME.BRANCHES[k].name)) +
+          '<select id="place-' + k + '" data-place="' + k + '">' +
+          (k === 'r1' ? '<option value="all"' + (cur === 'all' ? ' selected' : '') + '>Auf alle Orte verteilen</option>' : '') +
+          locs.map(function (l) { return '<option value="' + esc(l.id) + '"' + (cur === l.id ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+          '</select></label>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
+
+    // Zeiten
+    h += '<h2>Spielbetrieb & Termine</h2><div class="card"><div class="form-grid">' +
+      numField('Spielzeit (Minuten)', 'gameMinutes', t.config.gameMinutes, 1, 90) +
+      numField('Takt pro Spielrunde (Minuten)', 'slotMinutes', t.config.slotMinutes, 1, 120) +
+      numField('Pause zwischen den Runden (Minuten)', 'pauseMinutes', t.config.pauseMinutes, 0, 240) +
+      '</div><div class="form-grid" style="margin-top:12px">';
+    ME.rounds(t).forEach(function (r) {
+      var rc = t.config.rounds[r] || {};
+      h += '<label class="field">Runde ' + r + ' – Datum<input type="date" id="rd-' + r + '" data-rdate="' + r + '" value="' + esc(rc.date || '') + '"></label>' +
+        '<label class="field">Runde ' + r + ' – Beginn' + (r > 1 ? ' (leer = automatisch)' : '') + '<input type="time" id="rs-' + r + '" data-rstart="' + r + '" value="' + esc(rc.start || '') + '"></label>';
+    });
+    h += '</div><p class="muted small" style="margin-bottom:0">Ohne Datum läuft die Runde am selben Tag wie die vorige. Ohne Beginn startet sie nach der vorigen Runde plus Pause. Playoffs schließen direkt an die Gruppenspiele am jeweiligen Ort an.</p></div>';
+
+    // Teams
+    h += '<h2>Teams & Gruppen (Runde 1)</h2>' +
+      '<div class="btn-row no-print" style="margin-bottom:12px"><button class="btn" data-action="mdraw"' + dis + '>Gruppen zufällig auslosen</button>' +
+      '<span class="muted small">Oder von Hand: Namen direkt in die Gruppen eintragen. „+ Logo“ antippen für ein Vereinslogo.</span></div><div class="group-grid">';
+    t.groups.forEach(function (g, gi) {
+      h += '<div class="card group-card"><h3>Gruppe ' + ME.groupLetter(gi) + '</h3>';
+      g.forEach(function (id) {
+        var tm = teamObj(t, id);
+        h += '<div class="team-row">' + logoButton('team', id, tm.logo, 'Logo ' + tm.name) +
+          '<input type="text" id="team-' + esc(id) + '" data-team="' + esc(id) + '" value="' + esc(tm.name) + '" aria-label="Teamname">' +
+          (tm.logo ? '<button class="icon-btn" data-action="remove-logo" data-target="team" data-id="' + esc(id) + '" title="Logo entfernen" aria-label="Logo entfernen">✕</button>' : '') +
+          '</div>';
+      });
+      h += '</div>';
+    });
+    h += '</div><h2>Turnier verwalten</h2><div class="card btn-row">' +
+      '<button class="btn" data-action="duplicate" data-id="' + esc(t.id) + '">Als Vorlage für neues Turnier kopieren</button>' +
+      '<button class="btn danger" data-action="reset-results">Alle Ergebnisse zurücksetzen</button>' +
+      '<button class="btn danger" data-action="delete" data-id="' + esc(t.id) + '">Turnier löschen</button></div>';
+    return h;
+  }
+
+  function updateMultiLive(t, el, r) {
+    var m = /^m(\d)-(\w+)-g/.exec(el.dataset.game);
+    if (!m) return;
+    var round = +m[1], branch = m[2];
+    var tl = ME.timeline(t);
+    var box = app.querySelector('[data-mtables="' + round + '-' + branch + '"]');
+    if (box) box.innerHTML = renderMTables(t, round, branch, tl);
+    el.closest('.game').classList.toggle('done', TL.isPlayed(r));
+    var prog = ME.roundProgress(t, round, tl);
+    var bar = document.getElementById('mprog-bar'), txt = document.getElementById('mprog-text');
+    if (bar) bar.style.width = Math.round(prog.done / Math.max(1, prog.total) * 100) + '%';
+    if (txt) txt.textContent = prog.done + ' von ' + prog.total + ' Spielen eingetragen';
+    var tab = app.querySelector('.tab.active .count');
+    if (tab) tab.textContent = prog.done + '/' + prog.total;
+    var btn = app.querySelector('[data-action="mlock"][data-next="1"]');
+    if (btn) btn.disabled = !ME.roundComplete(t, round, tl);
+  }
+
   /* ----- GitHub-Speicher ----- */
 
   function renderGithub() {
@@ -850,6 +1140,7 @@
       t.results = {};
       t.groups2 = null;
       t.koSeeds = null;
+      if (t.format === 'multi') { t.stages = { 2: null, 3: null }; t.po = {}; }
       t.createdAt = new Date().toISOString();
       state.tournaments.push(t);
       save(t);
@@ -915,10 +1206,52 @@
       var t = currentTournament();
       if (!t || !confirm('Alle Ergebnisse dieses Turniers löschen? Teams und Einstellungen bleiben erhalten.')) return;
       t.results = {}; t.groups2 = null; t.koSeeds = null;
+      if (isMulti(t)) { t.stages = { 2: null, 3: null }; t.po = {}; }
       save(t); render();
     },
     'lock-groups2': function () { var t = currentTournament(); if (t) lockGroups2(t); },
     'lock-ko': function () { var t = currentTournament(); if (t) (isAndi(t) ? lockKo : lockKoGeneric)(t); },
+    'mdraw': function () { var t = currentTournament(); if (t && ME.drawGroups(t)) { save(t); render(); } },
+    'mlock': function (el) {
+      var t = currentTournament();
+      if (!t) return;
+      var r = parseInt(el.dataset.round, 10);
+      var later = TL.hasResultsWithPrefix(t, 'm' + r + '-') || TL.hasResultsWithPrefix(t, 'm3-') || TL.hasResultsWithPrefix(t, 'ko-');
+      if (later && !confirm('Runde ' + r + ' wird neu gebildet. Alle Ergebnisse ab Runde ' + r + ' und der Playoffs werden gelöscht. Fortfahren?')) return;
+      if (ME.lockRound(t, r)) { save(t); go('#/t/' + t.id + '/r' + r); }
+    },
+    'munlock': function (el) {
+      var t = currentTournament();
+      if (!t) return;
+      var r = parseInt(el.dataset.round, 10);
+      if (!confirm('Festlegung der Runde ' + r + ' aufheben? Alle Ergebnisse ab Runde ' + r + ' und der Playoffs werden gelöscht.')) return;
+      ME.unlockRound(t, r); save(t); render();
+    },
+    'mpo-lock': function (el) {
+      var t = currentTournament();
+      if (t && ME.lockPo(t, el.dataset.branch)) { save(t); render(); }
+    },
+    'mpo-unlock': function (el) {
+      var t = currentTournament();
+      if (!t || !confirm('Festlegung der Playoffs ' + ME.BRANCHES[el.dataset.branch].name + ' aufheben? Deren Ergebnisse werden gelöscht.')) return;
+      ME.unlockPo(t, el.dataset.branch); save(t); render();
+    },
+    'loc-add': function () {
+      var t = currentTournament();
+      if (!t) return;
+      var k = 1;
+      while (t.config.locations.some(function (l) { return l.id === 'L' + k; })) k++;
+      t.config.locations.push({ id: 'L' + k, name: 'Halle ' + (t.config.locations.length + 1), fields: 4 });
+      save(t); render();
+    },
+    'loc-del': function (el) {
+      var t = currentTournament();
+      if (!t || t.config.locations.length < 2) return;
+      t.config.locations = t.config.locations.filter(function (l) { return l.id !== el.dataset.id; });
+      Object.keys(t.config.place).forEach(function (k) { if (t.config.place[k] === el.dataset.id) t.config.place[k] = k === 'r1' ? 'all' : t.config.locations[0].id; });
+      save(t); render();
+    },
+    'jump': function (el) { var target = document.getElementById(el.dataset.target); if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     'gdraw': function () {
       var t = currentTournament();
       if (t && GE.drawGroups(t)) { save(t); render(); }
@@ -966,6 +1299,7 @@
       else t.results[el.dataset.game] = r;
       save(t);
       if (el.dataset.game.indexOf('ko') === 0) return; // Finalrunde: Aktualisierung beim Verlassen des Feldes
+      if (isMulti(t)) { updateMultiLive(t, el, r); return; }
       if (!isAndi(t)) { updateGenericLive(t, el, r); return; }
       var tables = document.getElementById('tables');
       var phase = el.dataset.game.charAt(1) === '1' ? 1 : 2;
@@ -1005,6 +1339,10 @@
       t.info[parseInt(el.dataset.rule, 10)][el.dataset.key] = el.value;
       save(t);
     }
+    if (el.dataset.loc && el.dataset.lkey === 'name') {
+      t.config.locations.forEach(function (l) { if (l.id === el.dataset.loc) l.name = el.value; });
+      save(t);
+    }
   });
 
   function updateGenericLive(t, el, r) {
@@ -1026,8 +1364,7 @@
     var el = e.target;
     if (el.id === 'new-format') {
       state.newFormat = el.value;
-      var nt = document.getElementById('new-teams');
-      if (el.value === 'andi') { nt.value = 16; nt.disabled = true; } else { nt.disabled = false; nt.value = state.newTeams; }
+      document.getElementById('new-teams-wrap').innerHTML = newTeamsInput(el.value);
       document.getElementById('new-format-desc').textContent = GE.formatInfo(el.value).desc;
       return;
     }
@@ -1052,6 +1389,19 @@
     if (el.dataset.move) {
       GE.moveTeam(t, el.dataset.move, parseInt(el.value, 10));
       save(t); render(); return;
+    }
+    if (el.dataset.mstruct) { if (ME.setTeamCount(t, parseInt(el.value, 10))) { save(t); } render(); return; }
+    if (el.dataset.place) { t.config.place[el.dataset.place] = el.value; save(t); render(); return; }
+    if (el.dataset.loc && el.dataset.lkey === 'fields') {
+      var nf = Math.max(1, parseInt(el.value, 10) || 1);
+      t.config.locations.forEach(function (l) { if (l.id === el.dataset.loc) l.fields = nf; });
+      save(t); render(); return;
+    }
+    if (el.dataset.rdate || el.dataset.rstart) {
+      var rk = el.dataset.rdate || el.dataset.rstart;
+      t.config.rounds[rk] = t.config.rounds[rk] || { date: '', start: '' };
+      t.config.rounds[rk][el.dataset.rdate ? 'date' : 'start'] = el.value;
+      save(t); return;
     }
     if (el.dataset.pen) {
       var r = t.results[el.dataset.pen];
@@ -1087,7 +1437,7 @@
     reader.onload = function () {
       var t;
       try { t = JSON.parse(reader.result); } catch (err) { alert('Die Datei konnte nicht gelesen werden.'); return; }
-      var problem = TL.validateTournament(t) || (t && t.format && t.format !== 'andi' ? GE.validate(t) : null);
+      var problem = TL.validateTournament(t) || (t && t.format === 'multi' ? ME.validate(t) : t && t.format && t.format !== 'andi' ? GE.validate(t) : null);
       if (problem) { alert(problem); return; }
       delete t._sync; delete t._dirty;
       if (find(t.id)) {

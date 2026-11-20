@@ -12,7 +12,8 @@
   var FORMATS = [
     { key: 'andi', name: 'Andi Spezial', desc: '16 Teams · 2 Gruppenphasen (neu gemischt) · alle Plätze 1–16 werden ausgespielt' },
     { key: 'league', name: 'Liga', desc: 'Eine Tabelle, jeder gegen jeden · optional Hin- und Rückrunde · optional K.-o.-Runde' },
-    { key: 'groups', name: 'WM-Format', desc: 'Gruppenphase · die Besten jeder Gruppe (plus beste Nachrücker) spielen K.-o.' }
+    { key: 'groups', name: 'WM-Format', desc: 'Gruppenphase · die Besten jeder Gruppe (plus beste Nachrücker) spielen K.-o.' },
+    { key: 'multi', name: 'Mehrstufig', desc: '16, 32 oder 64 Teams · Runde 1 in 4er-Gruppen · Leistungsgruppen Gold/Silber/Bronze · Champions, Europa und Conference League mit Playoffs · auch über 2 Tage und mehrere Orte' }
   ];
 
   var PLACEMENTS = [
@@ -57,6 +58,7 @@
 
   function createTournament(format, opts) {
     opts = opts || {};
+    if (format === 'multi') return root.ME.createTournament(opts);
     if (format === 'andi') {
       var a = TL.createTournament(opts);
       a.format = 'andi';
@@ -599,6 +601,7 @@
     moveTeam: moveTeam,
     groupWarnings: groupWarnings,
     roundRobin: roundRobin,
+    schedule: schedule,
     stageGames: stageGames,
     stageProgress: stageProgress,
     stageComplete: stageComplete,
