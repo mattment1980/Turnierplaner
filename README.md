@@ -22,12 +22,25 @@ Platzierung in den Gruppen: Punkte – Tordifferenz – mehr erzielte Tore – d
 - Export / Import als JSON-Datei (Backup oder Übergabe an ein anderes Gerät)
 - Druckansicht
 - Vereinsbanner und Sponsorenleiste (Bilder in `img/`)
+- Logos für jedes Turnier und jede Mannschaft (werden beim Hochladen automatisch verkleinert)
+- Automatisches Speichern auf GitHub (optional, siehe unten)
 
 ## Speicherung
 
-Alle Daten liegen **im Browser des Geräts** (localStorage). Es gibt keinen Server.
-Andere Geräte sehen die Daten nicht automatisch – dafür Export/Import nutzen.
-Browserdaten löschen = Turniere weg, also wichtige Turniere exportieren.
+Alle Daten liegen zunächst **im Browser des Geräts** (localStorage).
+
+**Optional: GitHub-Speicher.** In der App unter „GitHub-Speicher einrichten“ einen
+Fine-grained Personal Access Token hinterlegen (nur dieses Repo, Berechtigung
+*Contents: Read and write*). Dann speichert die App jedes Turnier automatisch ca. 8 Sekunden
+nach der letzten Änderung als `data/<id>.json` im Branch **`data`** (der Branch wird automatisch
+angelegt, GitHub Pages wird dadurch nicht neu gebaut). Andere Geräte mit Token laden die Turniere
+beim Öffnen. Tragen zwei Geräte gleichzeitig ein, werden die Ergebnisse zusammengeführt.
+
+- Der Token bleibt im Browser des jeweiligen Geräts und landet nie im Repo oder im Export.
+- Das Repo ist öffentlich – Teamnamen, Ergebnisse und Logos sind lesbar. Keine Spielernamen eintragen.
+- Offline? Änderungen bleiben lokal und werden nachgeholt, sobald wieder Netz da ist.
+
+Zusätzlich gibt es Export/Import als JSON-Datei.
 
 ## Starten
 
@@ -39,6 +52,7 @@ Browserdaten löschen = Turniere weg, also wichtige Turniere exportieren.
 ```
 js/logic.js   Turnierlogik (Spielplan, Tabellen, Mischung, Finalrunde) – ohne DOM
 js/app.js     Oberfläche
+js/sync.js    Speichern auf GitHub (Contents-API, Branch "data")
 css/style.css Styles
 tests/        Tests der Turnierlogik
 ```

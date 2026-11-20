@@ -100,6 +100,43 @@ body > .banner { border-radius: 0; margin: 0; text-align: center; }
 }
 .sponsor img { height: 56px; width: auto; }
 
+/* Logos */
+.tname { display: inline-flex; align-items: center; gap: 7px; vertical-align: middle; }
+.tlogo { width: 24px; height: 24px; object-fit: contain; flex: none; }
+.game .home .tname { flex-direction: row-reverse; }
+.ranking .tlogo { width: 30px; height: 30px; }
+.t-title { display: flex; align-items: center; gap: 14px; }
+.tour-logo { width: 64px; height: 64px; object-fit: contain; flex: none; }
+.card-logo { float: right; width: 48px; height: 48px; object-fit: contain; margin-left: 10px; }
+.team-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.team-row input { margin-bottom: 0; }
+.logo-btn {
+  flex: none; width: 40px; height: 40px; border-radius: 8px; border: 1px dashed #aebbb3; background: #f7faf8;
+  cursor: pointer; padding: 2px; display: grid; place-items: center; color: var(--muted); font: inherit; font-size: 9px; font-weight: 700; line-height: 1.1;
+}
+.logo-btn:hover { border-color: var(--green-2); color: var(--green-2); }
+.logo-btn.has-logo { border-style: solid; border-color: var(--line); background: #fff; }
+.logo-btn img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.logo-field { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.logo-field .logo-btn { width: 72px; height: 72px; font-size: 12px; }
+.field-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.icon-btn { flex: none; border: none; background: none; color: var(--danger); cursor: pointer; font-size: 14px; padding: 4px; }
+
+/* Sync-Status */
+.sync-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+.sync { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--muted); }
+.sync::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #b8c2bc; flex: none; }
+.sync-ok { color: var(--green); }
+.sync-ok::before { background: #22a04b; }
+.sync-saving::before, .sync-pending::before { background: #e0a100; }
+.sync-warn { color: var(--warn-ink); }
+.sync-warn::before { background: #e0a100; }
+.sync-error { color: var(--danger); }
+.sync-error::before { background: var(--danger); }
+p.sync-ok::before, p.sync-error::before { display: none; }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+code { background: #eef2ef; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
 /* Startseite */
 .t-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-top: 16px; }
 .t-card h3 { font-size: 17px; margin-bottom: 2px; }
@@ -129,7 +166,7 @@ body > .banner { border-radius: 0; margin: 0; text-align: center; }
 
 /* Formulare */
 label.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
-input[type=text], input[type=date], input[type=time], input[type=number], select, textarea {
+input[type=text], input[type=password], input[type=date], input[type=time], input[type=number], select, textarea {
   font: inherit;
   color: var(--ink);
   border: 1px solid #cbd4ce;
