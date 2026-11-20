@@ -9,7 +9,11 @@
   var importInput = document.getElementById('import-file');
   var topbarSub = document.getElementById('topbar-sub');
 
-  var state = { tournaments: [], storageOk: true, showNewForm: false, newFormat: 'groups', newTeams: 16 };
+  var state = { tournaments: [], storageOk: true, showNewForm: false, newFormat: 'groups', newTeams: 16, live: null, showShare: false };
+  var viewOnly = false; // Live-Ansicht für Zuschauer: nur lesen
+  var brand = document.querySelector('.brand');
+
+  function tbase(t) { return (viewOnly ? '#/live/' : '#/t/') + encodeURIComponent(t.id) + '/'; }
 
   /* ---------- Speichern / Laden ---------- */
 
@@ -26,7 +30,7 @@
     }
   }
 
-  // Änderung an einem Turnier: lokal speichern und GitHub-Upload anstoßen
+  // Änderung an einem Turnier: lokal speichern und Online-Speicherung anstoßen
   function save(t) {
     if (t) {
       t.updatedAt = new Date().toISOString();
@@ -111,7 +115,8 @@
   function route() {
     var parts = (location.hash || '#/').replace(/^#\/?/, '').split('/');
     if (parts[0] === 't' && parts[1]) return { view: 'tournament', id: parts[1], tab: parts[2] || 'setup' };
-    if (parts[0] === 'github') return { view: 'github' };
+    if (parts[0] === 'login') return { view: 'login' };
+    if (parts[0] === 'live' && parts[1]) return { view: 'live', id: decodeURIComponent(parts[1]), tab: parts[2] || '' };
     return { view: 'home' };
   }
 
@@ -166,18 +171,25 @@
   /* ---------- Rendering ---------- */
 
   function render() {
+    state.pendingRender = false;
     var r = route();
     var active = document.activeElement && document.activeElement.id;
-    if (r.view === 'tournament') {
+    viewOnly = r.view === 'live';
+    app.classList.toggle('view-only', viewOnly);
+    brand.setAttribute('href', viewOnly ? '#/live/' + encodeURIComponent(r.id) : '#/');
+    if (r.view !== 'live' && state.live) { state.live.unsub(); state.live = null; }
+    if (r.view === 'live') {
+      renderLive(r);
+    } else if (r.view === 'tournament') {
       var t = find(r.id);
       if (!t) { go('#/'); return; }
       topbarSub.textContent = t.name + (t.date ? ' · ' + fmtDate(t.date) : '');
       document.title = t.name + ' – Turnierplaner';
       app.innerHTML = renderTournament(t, r.tab);
-    } else if (r.view === 'github') {
-      topbarSub.textContent = 'GitHub-Speicher';
-      document.title = 'GitHub-Speicher – Turnierplaner';
-      app.innerHTML = renderGithub();
+    } else if (r.view === 'login') {
+      topbarSub.textContent = 'Anmeldung';
+      document.title = 'Anmeldung – Turnierplaner';
+      app.innerHTML = renderLogin();
     } else {
       topbarSub.textContent = '';
       document.title = 'Turnierplaner';
@@ -187,6 +199,106 @@
       var el = document.getElementById(active);
       if (el) el.focus();
     }
+    if (state.showShare && r.view === 'tournament') drawQr();
+  }
+
+  /* ----- Live-Ansicht ----- */
+
+  function renderLive(r) {
+    if (!Sync.configured()) {
+      topbarSub.textContent = '';
+      app.innerHTML = '<div class="card empty">Die Live-Ansicht ist noch nicht eingerichtet.</div>';
+      return;
+    }
+    if (!state.live || state.live.id !== r.id) {
+      if (state.live) state.live.unsub();
+      var live = { id: r.id, t: null, err: null, at: null, unsub: function () {} };
+      state.live = live;
+      live.unsub = Sync.watchTournament(r.id, function (data, err) {
+        if (state.live !== live) return;
+        live.t = data; live.err = err; live.at = new Date();
+        if (route().view === 'live') render();
+      });
+    }
+    var t = state.live.t;
+    if (!t) {
+      topbarSub.textContent = 'Live';
+      app.innerHTML = state.live.err
+        ? '<div class="card empty">' + (state.live.err === 'not-found' ? 'Dieses Turnier gibt es nicht (mehr).' : esc(state.live.err)) + '</div>'
+        : '<div class="card empty">Lade Turnier …</div>';
+      return;
+    }
+    if (!t.format) t.format = 'andi';
+    var tab = r.tab && r.tab !== 'setup' ? r.tab : firstPlayTab(t);
+    topbarSub.textContent = t.name + ' · Live';
+    document.title = t.name + ' – Live';
+    app.innerHTML = renderTournament(t, tab);
+  }
+
+  function liveBadge() {
+    var at = state.live && state.live.at;
+    return '<span class="sync sync-ok live-dot">Live – aktualisiert sich automatisch' + (at ? ' · Stand ' + ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2) + ':' + ('0' + at.getSeconds()).slice(-2) : '') + '</span>';
+  }
+
+  /* ----- Teilen: Link & QR-Code ----- */
+
+  var qrLoading = null;
+  function loadQrLib() {
+    if (window.qrcode) return Promise.resolve();
+    if (qrLoading) return qrLoading;
+    qrLoading = new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = 'js/vendor/qrcode.js'; // qrcode-generator 1.4.4, MIT-Lizenz (Kazuhiko Arase)
+      sc.onload = function () { resolve(); };
+      sc.onerror = function () { qrLoading = null; reject(new Error('QR-Code konnte nicht geladen werden')); };
+      document.head.appendChild(sc);
+    });
+    return qrLoading;
+  }
+
+  function drawQr() {
+    var box = document.getElementById('qr');
+    if (!box) return;
+    var url = box.getAttribute('data-url');
+    loadQrLib().then(function () {
+      var qr = window.qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      box.innerHTML = qr.createSvgTag ? qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }) : qr.createImgTag(6, 12);
+    }).catch(function () { box.textContent = 'QR-Code nicht verfügbar (offline?) – Link oben nutzen.'; });
+  }
+
+  function renderShare(t) {
+    var url = Sync.liveUrl(t.id);
+    return '<div class="card share-card">' +
+      '<div class="share-text"><h3>Live-Ansicht für Eltern & Zuschauer</h3>' +
+      '<p class="muted small">Jeder mit diesem Link sieht Spielplan, Tabellen und Ergebnisse in Echtzeit – ohne Anmeldung und ohne Bearbeitungsrechte.</p>' +
+      '<input type="text" id="share-url" readonly value="' + esc(url) + '">' +
+      '<div class="btn-row" style="margin-top:8px"><button class="btn small primary" data-action="copy-link">Link kopieren</button>' +
+      (navigator.share ? '<button class="btn small" data-action="native-share">Teilen …</button>' : '') +
+      '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Öffnen</a>' +
+      '<button class="btn small" data-action="share">Schließen</button></div></div>' +
+      '<div class="qr" id="qr" data-url="' + esc(url) + '">QR-Code wird erstellt …</div></div>';
+  }
+
+  /* ----- Anmeldung ----- */
+
+  function renderLogin() {
+    var h = '<h1>Anmeldung Turnierleitung</h1>';
+    if (!Sync.configured()) {
+      return h + '<div class="banner warn">Der Online-Speicher ist noch nicht eingerichtet (Firebase-Konfiguration fehlt). Bis dahin speichert die App nur im Browser.</div>' +
+        '<a class="btn" href="#/">Zurück</a>';
+    }
+    var u = Sync.currentUser();
+    if (u) {
+      return h + '<div class="card"><p>Angemeldet als <b>' + esc(u.email || '') + '</b>. Alle Turniere werden online gespeichert und auf deinen Geräten abgeglichen.</p>' +
+        '<div class="btn-row"><a class="btn primary" href="#/">Zu den Turnieren</a><button class="btn danger" data-action="logout">Abmelden</button></div></div>';
+    }
+    return h + '<div class="card login-card"><p class="muted small">Nur für die Turnierleitung. Eltern und Zuschauer brauchen keinen Zugang – sie bekommen den Live-Link.</p>' +
+      '<label class="field">E-Mail<input type="text" id="login-email" autocomplete="username" inputmode="email"></label>' +
+      '<label class="field" style="margin-top:10px">Passwort<input type="password" id="login-pw" autocomplete="current-password"></label>' +
+      '<div class="btn-row" style="margin-top:14px"><button class="btn primary" data-action="login">Anmelden</button><a class="btn" href="#/">Abbrechen</a></div>' +
+      '<p id="login-msg" class="small sync-error" style="margin-bottom:0"></p></div>';
   }
 
   function syncBadge(st, id) {
@@ -224,7 +336,7 @@
       '<div class="btn-row"><button class="btn primary" data-action="toggle-new">+ Neues Turnier</button>' +
       '<button class="btn" data-action="import">Importieren</button></div></div>' +
       '<div class="sync-line">' + syncBadge(Sync.globalStatus(), '') +
-      ' <a href="#/github" class="small">' + (Sync.enabled() ? 'GitHub-Einstellungen' : 'GitHub-Speicher einrichten') + '</a></div>';
+      (Sync.configured() ? ' <a href="#/login" class="small">' + (Sync.currentUser() ? 'Abmelden' : 'Anmelden') + '</a>' : '') + '</div>';
 
     if (state.showNewForm) {
       h += '<div class="card" style="margin-top:16px"><h3>Neues Turnier anlegen</h3>' +
@@ -249,12 +361,12 @@
     }
     h += '<div class="t-list">';
     list.forEach(function (t) {
-      h += '<div class="card t-card">' + logoHtml(t.logo, 'card-logo') + '<h3><a href="#/t/' + esc(t.id) + '/' + openTab(t) + '">' + esc(t.name) + '</a></h3>' +
+      h += '<div class="card t-card">' + logoHtml(t.logo, 'card-logo') + '<h3><a href="' + tbase(t) + openTab(t) + '">' + esc(t.name) + '</a></h3>' +
         '<div class="muted small">' + esc([fmtDate(t.date), t.venue, t.ageGroup].filter(Boolean).join(' · ') || 'ohne Datum') + '</div>' +
         '<div class="muted small">' + esc(GE.formatInfo(fmt(t)).name + ' · ' + t.teams.length + ' Teams') + '</div>' +
         '<span class="status-pill">' + esc(statusText(t)) + '</span>' +
         '<div class="btn-row">' +
-        '<a class="btn small" href="#/t/' + esc(t.id) + '/' + firstPlayTab(t) + '">Öffnen</a>' +
+        '<a class="btn small" href="' + tbase(t) + firstPlayTab(t) + '">Öffnen</a>' +
         '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
         '<button class="btn small" data-action="duplicate" data-id="' + esc(t.id) + '">Als Vorlage kopieren</button>' +
         '<button class="btn small danger" data-action="delete" data-id="' + esc(t.id) + '">Löschen</button>' +
@@ -276,20 +388,27 @@
     var h = '<div class="t-head"><div class="t-title">' + logoHtml(t.logo, 'tour-logo') + '<div><h1>' + esc(t.name) + '</h1><div class="muted">' +
       esc([fmtDate(t.date), t.venue, t.ageGroup].filter(Boolean).join(' · ')) + '</div></div></div>' +
       '<div class="btn-row"><button class="btn small" data-action="print">Drucken</button>' +
-      '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
-      '<a class="btn small" href="#/">Alle Turniere</a></div></div>' +
-      '<div class="sync-line no-print">' + syncBadge(Sync.statusFor(t), t.id) +
-      (Sync.enabled() ? ' <button class="btn small" data-action="sync-now">Jetzt speichern</button>' : ' <a href="#/github" class="small">GitHub-Speicher einrichten</a>') + '</div>';
+      (viewOnly ? '' : '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
+      '<a class="btn small" href="#/">Alle Turniere</a>') + '</div></div>';
+    if (viewOnly) {
+      h += '<div class="sync-line no-print">' + liveBadge() + '</div>';
+    } else {
+      h += '<div class="sync-line no-print">' + syncBadge(Sync.statusFor(t), t.id) +
+        (Sync.enabled() ? ' <button class="btn small" data-action="sync-now">Jetzt speichern</button> <button class="btn small primary" data-action="share">Live-Link & QR-Code</button>'
+          : Sync.configured() ? ' <a href="#/login" class="small">Anmelden, um online zu speichern</a>' : '') + '</div>';
+      if (state.showShare && Sync.enabled()) h += renderShare(t);
+    }
 
     if (isMulti(t)) return h + renderMultiTournament(t, tab);
     if (!isAndi(t)) return h + renderGenericTournament(t, tab);
 
     h += '<nav class="tabs">';
     TABS.forEach(function (x) {
+      if (viewOnly && x.key === 'setup') return;
       var count = '';
       if (x.key === 'p1') count = TL.phaseProgress(t, 1).done + '/24';
       if (x.key === 'p2' && t.groups2) count = TL.phaseProgress(t, 2).done + '/24';
-      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="#/t/' + esc(t.id) + '/' + x.key + '">' +
+      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (count ? '<span class="count">' + count + '</span>' : '') + '</a>';
     });
     h += '</nav>';
@@ -465,6 +584,14 @@
     var ready = !!(g.home && g.away);
     var done = TL.isPlayed(r);
     var dis = ready ? '' : ' disabled';
+    if (viewOnly) {
+      var pen = isKo && done && r.h === r.a && r.pen ? '<div class="pen">Sieger im Neunmeterschießen: ' + esc(TL.teamName(t, r.pen === 'h' ? g.home : g.away)) + '</div>' : '';
+      return '<div class="game' + (done ? ' done' : '') + '">' +
+        '<div class="meta"><b>Spiel ' + g.no + '</b><span>Feld ' + g.field + '</span><span>' + esc(isKo ? g.time + ' Uhr' : metaLabel) + '</span></div>' +
+        '<div class="home">' + sideHtml(t, g.home, g.homeLabel) + '</div>' +
+        '<div class="score score-ro"><span>' + (done ? r.h : '–') + '</span><span class="sep">:</span><span>' + (done ? r.a : '–') + '</span></div>' +
+        '<div class="away">' + sideHtml(t, g.away, g.awayLabel) + '</div>' + pen + '</div>';
+    }
     var h = '<div class="game' + (done ? ' done' : '') + '">' +
       '<div class="meta"><b>Spiel ' + g.no + '</b><span>Feld ' + g.field + '</span><span>' + esc(isKo ? g.time + ' Uhr' : metaLabel) + '</span></div>' +
       '<div class="home">' + sideHtml(t, g.home, g.homeLabel) + '</div>' +
@@ -548,6 +675,11 @@
     (isAndi(t) ? TL.timetable(t) : isMulti(t) ? ME.timetable(t) : GE.timetable(t)).forEach(function (r) { h += '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value || '–') + '</dd>'; });
     h += '</dl><p class="muted small">Wird automatisch aus den Startzeiten und dem Takt berechnet.</p></div>';
 
+    if (viewOnly) {
+      h += '<h2>Spielregeln</h2><div class="card"><dl class="info">';
+      t.info.forEach(function (row) { h += '<dt>' + esc(row.label) + '</dt><dd>' + esc(row.value) + '</dd>'; });
+      return h + '</dl></div>';
+    }
     h += '<h2>Spielregeln</h2><div class="card">';
     t.info.forEach(function (row, i) {
       h += '<div class="rule-row"><input type="text" id="rl-' + i + '" data-rule="' + i + '" data-key="label" value="' + esc(row.label) + '" aria-label="Regel">' +
@@ -574,7 +706,8 @@
   function renderGenericTournament(t, tab) {
     var h = '<nav class="tabs">';
     genericTabs(t).forEach(function (x) {
-      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="#/t/' + esc(t.id) + '/' + x.key + '">' +
+      if (viewOnly && x.key === 'setup') return;
+      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
     });
     h += '</nav>';
@@ -787,7 +920,8 @@
     var tl = ME.timeline(t);
     var h = '<nav class="tabs">';
     multiTabs(t, tl).forEach(function (x) {
-      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="#/t/' + esc(t.id) + '/' + x.key + '">' +
+      if (viewOnly && x.key === 'setup') return;
+      h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
     });
     h += '</nav>';
@@ -1030,37 +1164,6 @@
     if (btn) btn.disabled = !ME.roundComplete(t, round, tl);
   }
 
-  /* ----- GitHub-Speicher ----- */
-
-  function renderGithub() {
-    var c = Sync.getConfig();
-    var h = '<h1>GitHub-Speicher</h1>' +
-      '<p>Wenn eingerichtet, speichert die App jedes Turnier automatisch als kleine Datei in deinem GitHub-Repo ' +
-      '(Branch „' + esc(c.branch) + '“, Ordner <code>data/</code>). Auf jedem anderen Gerät mit Token werden die Turniere beim Öffnen geladen.</p>' +
-      '<div class="banner warn">Das Repo ist öffentlich: Teamnamen, Ergebnisse und Logos sind für jeden lesbar. Keine Spielernamen eintragen.</div>';
-
-    h += '<div class="card"><h3>Einmalig pro Gerät: Token anlegen</h3><ol class="steps">' +
-      '<li>Auf GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">neuen Fine-grained Token anlegen</a> (Settings → Developer settings → Personal access tokens → Fine-grained tokens).</li>' +
-      '<li><b>Token name:</b> z. B. „Turnierplaner“, <b>Expiration:</b> z. B. 1 Jahr.</li>' +
-      '<li><b>Repository access:</b> „Only select repositories“ → <b>' + esc(c.repo || 'Turnierplaner') + '</b>.</li>' +
-      '<li><b>Permissions → Repository permissions → Contents:</b> „Read and write“. Sonst nichts.</li>' +
-      '<li>„Generate token“, Token kopieren und unten einfügen.</li></ol>' +
-      '<p class="muted small">Der Token bleibt nur in diesem Browser. Geht ein Gerät verloren, den Token auf GitHub löschen.</p></div>';
-
-    h += '<h2>Verbindung</h2><div class="card"><div class="form-grid">' +
-      '<label class="field">GitHub-Benutzer<input type="text" id="gh-owner" value="' + esc(c.owner) + '" placeholder="mattment1980"></label>' +
-      '<label class="field">Repository<input type="text" id="gh-repo" value="' + esc(c.repo) + '" placeholder="Turnierplaner"></label>' +
-      '<label class="field">Branch für Daten<input type="text" id="gh-branch" value="' + esc(c.branch) + '"></label>' +
-      '<label class="field">Token<input type="password" id="gh-token" autocomplete="off" placeholder="' + (c.token ? 'gespeichert – zum Ändern neu einfügen' : 'github_pat_…') + '"></label>' +
-      '</div><div class="btn-row" style="margin-top:14px">' +
-      '<button class="btn primary" data-action="gh-save">Speichern & Verbindung testen</button>' +
-      (c.token ? '<button class="btn" data-action="gh-pull">Jetzt mit GitHub abgleichen</button>' +
-        '<button class="btn danger" data-action="gh-disconnect">Token von diesem Gerät entfernen</button>' : '') +
-      '</div><p id="gh-result" class="small" style="margin-bottom:0">' + (c.token ? syncBadge(Sync.globalStatus(), '') : '') + '</p></div>';
-    h += '<div class="btn-row" style="margin-top:16px"><a class="btn" href="#/">Zurück zu den Turnieren</a></div>';
-    return h;
-  }
-
   /* ---------- Aktionen ---------- */
 
   function currentTournament() {
@@ -1148,7 +1251,7 @@
     },
     'delete': function (el) {
       var t = find(el.dataset.id);
-      if (!t || !confirm('Turnier „' + t.name + '“ wirklich löschen?' + (Sync.enabled() ? ' Es wird auch auf GitHub gelöscht.' : '') + ' Das kann nicht rückgängig gemacht werden.')) return;
+      if (!t || !confirm('Turnier „' + t.name + '“ wirklich löschen?' + (Sync.enabled() ? ' Es wird auch online gelöscht – der Live-Link funktioniert dann nicht mehr.' : '') + ' Das kann nicht rückgängig gemacht werden.')) return;
       Sync.remove(t);
       state.tournaments = state.tournaments.filter(function (x) { return x.id !== t.id; });
       persist();
@@ -1156,33 +1259,28 @@
     },
     'print': function () { window.print(); },
     'sync-now': function () { var t = currentTournament(); if (t) Sync.saveNow(t); },
-    'gh-save': function () {
-      var c = Sync.getConfig();
-      c.owner = document.getElementById('gh-owner').value.trim();
-      c.repo = document.getElementById('gh-repo').value.trim();
-      c.branch = document.getElementById('gh-branch').value.trim() || 'data';
-      var tok = document.getElementById('gh-token').value.trim();
-      if (tok) c.token = tok;
-      var out = document.getElementById('gh-result');
-      if (!c.owner || !c.repo || !c.token) { out.textContent = 'Bitte Benutzer, Repository und Token ausfüllen.'; out.className = 'small sync-error'; return; }
-      Sync.setConfig(c);
-      out.className = 'small'; out.textContent = 'Teste Verbindung …';
-      Sync.testConnection().then(function (res) {
-        out.className = 'small sync-ok'; out.textContent = res.text + ' Turniere werden abgeglichen …';
-        return Sync.pullAll().then(function () {
-          if (route().view === 'github') render();
-          var o = document.getElementById('gh-result');
-          if (o) { o.className = 'small sync-ok'; o.textContent = res.text + ' Abgleich fertig.'; }
-        });
-      }).catch(function (err) {
-        out.className = 'small sync-error';
-        out.textContent = err.status ? err.message : 'Keine Verbindung zu GitHub (offline?).';
-      });
+    'login': function () {
+      var email = document.getElementById('login-email').value.trim();
+      var pw = document.getElementById('login-pw').value;
+      var msg = document.getElementById('login-msg');
+      msg.textContent = 'Melde an …'; msg.className = 'small';
+      Sync.login(email, pw).then(function () { go('#/'); }).catch(function (err) { msg.className = 'small sync-error'; msg.textContent = err.message; });
     },
-    'gh-pull': function () { Sync.pullAll(); },
-    'gh-disconnect': function () {
-      if (!confirm('Token von diesem Gerät entfernen? Die Turniere bleiben im Browser und auf GitHub erhalten.')) return;
-      Sync.clearToken(); render();
+    'logout': function () {
+      if (!confirm('Abmelden? Die Turniere bleiben online gespeichert. Auf diesem Gerät kannst du danach nur lokal weiterarbeiten.')) return;
+      Sync.logout().then(function () { go('#/'); });
+    },
+    'share': function () { state.showShare = !state.showShare; render(); },
+    'copy-link': function () {
+      var inp = document.getElementById('share-url');
+      inp.select();
+      var done = function () { var b = app.querySelector('[data-action="copy-link"]'); if (b) b.textContent = 'Kopiert ✓'; };
+      if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(done, function () { document.execCommand('copy'); done(); });
+      else { document.execCommand('copy'); done(); }
+    },
+    'native-share': function () {
+      var t = currentTournament();
+      if (t && navigator.share) navigator.share({ title: t.name, text: 'Live-Ergebnisse: ' + t.name, url: Sync.liveUrl(t.id) }).catch(function () {});
     },
     'upload-logo': function (el) {
       pendingLogo = { target: el.dataset.target, id: el.dataset.id };
@@ -1414,6 +1512,7 @@
 
   // Enter springt ins nächste Ergebnisfeld
   app.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.target.id === 'login-pw' || e.target.id === 'login-email')) { e.preventDefault(); actions.login(); return; }
     if (e.key !== 'Enter' || !e.target.dataset.game) return;
     e.preventDefault();
     var inputs = Array.prototype.slice.call(app.querySelectorAll('input[data-game]:not([disabled])'));
@@ -1424,6 +1523,17 @@
     var idx = fresh.map(function (x) { return x.id; }).indexOf(current);
     var next = fresh[(idx >= 0 ? idx : i) + 1];
     if (next) { next.focus(); next.select(); }
+  });
+
+  // Änderungen von anderen Geräten anzeigen, sobald niemand mehr tippt
+  app.addEventListener('focusout', function () {
+    if (!state.pendingRender) return;
+    setTimeout(function () {
+      var a = document.activeElement;
+      if (a && a.tagName === 'INPUT' && app.contains(a)) return; // direkt ins nächste Feld gewechselt
+      state.pendingRender = false;
+      render();
+    }, 400);
   });
 
   app.addEventListener('focusin', function (e) {
@@ -1478,12 +1588,12 @@
     persist: persist,
     onStatus: updateSyncStatus,
     onPulled: function () {
-      // nicht neu zeichnen, während jemand gerade tippt
+      // nicht neu zeichnen, während jemand gerade tippt – wird beim Verlassen des Feldes nachgeholt
       var a = document.activeElement;
-      if (a && a.tagName === 'INPUT' && app.contains(a)) { updateSyncStatus(null); return; }
+      if (a && a.tagName === 'INPUT' && app.contains(a)) { state.pendingRender = true; updateSyncStatus(null); return; }
       render();
-    }
+    },
+    onAuth: function () { if (route().view !== 'live') render(); }
   });
   render();
-  Sync.pullAll();
 })();

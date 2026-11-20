@@ -220,6 +220,19 @@ label.field.check input { width: 20px; height: 20px; }
 .loc-row { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; align-items: end; margin-bottom: 8px; }
 @media (max-width: 640px) { .loc-row { grid-template-columns: 1fr 90px auto; } }
 
+/* Live & Teilen */
+.view-only [data-action]:not([data-action="print"]):not([data-action="jump"]) { display: none !important; }
+.view-only .btn-row.no-print:not(.branch-jump) { display: none !important; }
+.score-ro span:not(.sep) { display: inline-grid; place-items: center; min-width: 40px; height: 36px; border-radius: 7px; background: #eef3ef; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.live-dot::before { background: #e5484d !important; animation: pulse 1.6s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.share-card { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-top: 14px; }
+.share-text { flex: 1 1 320px; }
+.share-text input { font-size: 13px; }
+.qr { width: 200px; min-height: 200px; display: grid; place-items: center; text-align: center; font-size: 12px; color: var(--muted); background: #fff; }
+.qr svg, .qr img { width: 200px; height: 200px; }
+.login-card { max-width: 420px; }
+
 /* Spielplan */
 .slot { margin-bottom: 14px; }
 .slot-head { font-weight: 700; font-size: 14px; color: var(--green); margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }

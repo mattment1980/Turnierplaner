@@ -45,24 +45,22 @@ Der Spielplan wird automatisch auf die Spielfelder verteilt – mit möglichst w
 - Druckansicht
 - Vereinsbanner und Sponsorenleiste (Bilder in `img/`)
 - Logos für jedes Turnier und jede Mannschaft (werden beim Hochladen automatisch verkleinert)
-- Automatisches Speichern auf GitHub (optional, siehe unten)
+- Online-Speicher mit Login und Live-Ansicht für Zuschauer (Firebase, optional)
 
-## Speicherung
+## Speicherung & Live-Ansicht (Firebase)
 
-Alle Daten liegen zunächst **im Browser des Geräts** (localStorage).
+Ohne Konfiguration speichert die App nur im Browser des Geräts (plus Export/Import als JSON).
 
-**Optional: GitHub-Speicher.** In der App unter „GitHub-Speicher einrichten“ einen
-Fine-grained Personal Access Token hinterlegen (nur dieses Repo, Berechtigung
-*Contents: Read and write*). Dann speichert die App jedes Turnier automatisch ca. 8 Sekunden
-nach der letzten Änderung als `data/<id>.json` im Branch **`data`** (der Branch wird automatisch
-angelegt, GitHub Pages wird dadurch nicht neu gebaut). Andere Geräte mit Token laden die Turniere
-beim Öffnen. Tragen zwei Geräte gleichzeitig ein, werden die Ergebnisse zusammengeführt.
+Mit Firebase (kostenloser Spark-Tarif):
+- **Turnierleitung** meldet sich unter „Anmelden“ mit E-Mail/Passwort an. Alle Turniere werden ca. 1,5 s nach jeder Eingabe online gespeichert und auf allen angemeldeten Geräten in Echtzeit abgeglichen. Tragen zwei Geräte gleichzeitig ein, werden die Ergebnisse zusammengeführt. Offline-Eingaben werden nachgeholt.
+- **Eltern & Zuschauer** bekommen über „Live-Link & QR-Code“ einen Link (`…/#/live/<id>`). Die Live-Ansicht braucht keine Anmeldung, hat keine Eingabefelder und aktualisiert sich selbst.
+- Gespeichert wird je Turnier ein Dokument `tournaments/<id>` in Firestore. Geschützt wird über `firestore.rules`: lesen darf jeder mit Link, schreiben nur die dort eingetragenen E-Mail-Adressen.
 
-- Der Token bleibt im Browser des jeweiligen Geräts und landet nie im Repo oder im Export.
-- Das Repo ist öffentlich – Teamnamen, Ergebnisse und Logos sind lesbar. Keine Spielernamen eintragen.
-- Offline? Änderungen bleiben lokal und werden nachgeholt, sobald wieder Netz da ist.
-
-Zusätzlich gibt es Export/Import als JSON-Datei.
+### Einrichtung
+1. Firebase-Konsole → Projekt → Web-App hinzufügen (`</>`), Konfiguration in `js/firebase-config.js` eintragen.
+2. Authentication → Anmeldemethode „E-Mail/Passwort“ aktivieren, unter „Users“ die Turnierleitung anlegen.
+3. Firestore Database anlegen (Produktionsmodus, Standort z. B. `europe-west3` Frankfurt).
+4. Firestore → Regeln: Inhalt von `firestore.rules` einfügen, eigene E-Mail-Adresse(n) eintragen, veröffentlichen.
 
 ## Starten
 
@@ -76,7 +74,10 @@ js/logic.js   Andi Spezial (Spielplan, Tabellen, Mischung, Finalrunde) – ohne 
 js/engine.js  Liga & WM-Format (Rundenturnier, Zeitplan, K.-o.-Baum, Endstand)
 js/multi.js   Mehrstufig (Runden, Leistungsgruppen, Playoffs, Orte & Termine)
 js/app.js     Oberfläche
-js/sync.js    Speichern auf GitHub (Contents-API, Branch "data")
+js/cloud.js   Online-Speicher, Login und Live-Ansicht (Firebase)
+js/firebase-config.js  Firebase-Konfiguration des Projekts
+js/vendor/qrcode.js    QR-Code-Erzeugung (qrcode-generator, MIT)
+firestore.rules        Sicherheitsregeln für Firestore
 css/style.css Styles
 tests/        Tests der Turnierlogik
 ```
