@@ -103,7 +103,8 @@
     var list = state.tournaments.slice().sort(function (a, b) {
       return (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '');
     });
-    var h = '<div class="t-head"><div><h1>Meine Turniere</h1>' +
+    var h = '<img class="hero" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
+      '<div class="t-head"><div><h1>Meine Turniere</h1>' +
       '<div class="muted">16 Teams · 4 Gruppen · 2 Gruppenphasen · Finalrunde mit allen Plätzen 1–16</div></div>' +
       '<div class="btn-row"><button class="btn primary" data-action="toggle-new">+ Neues Turnier</button>' +
       '<button class="btn" data-action="import">Importieren</button></div></div>';
@@ -381,7 +382,8 @@
 
   function renderFinal(t) {
     var ranking = TL.finalRanking(t);
-    var h = '<h2 style="margin-top:0">Endstand</h2><ol class="ranking">';
+    var h = '<img class="hero hero-final" src="img/banner.jpg" alt="Sportbund Turnierplaner" width="1600" height="533">' +
+      '<h2 style="margin-top:0">Endstand</h2><ol class="ranking">';
     ranking.forEach(function (r) {
       h += '<li class="p' + r.place + '"><span class="place">' + r.place + '</span>' +
         (r.team ? esc(TL.teamName(t, r.team)) : '<span class="open">noch offen</span>') + '</li>';

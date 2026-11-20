@@ -21,6 +21,7 @@ Platzierung in den Gruppen: Punkte – Tordifferenz – mehr erzielte Tore – d
 - Spielregeln editierbar
 - Export / Import als JSON-Datei (Backup oder Übergabe an ein anderes Gerät)
 - Druckansicht
+- Vereinsbanner und Sponsorenleiste (Bilder in `img/`)
 
 ## Speicherung
 
