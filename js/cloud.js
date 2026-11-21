@@ -170,7 +170,10 @@
           date: t.date || '',
           format: t.format || 'andi',
           updatedAt: t.updatedAt,
-          by: (user && user.email) || ''
+          by: (user && user.email) || '',
+          // für die Sicherheitsregeln: Anmeldungen nur, solange offen und vor Anmeldeschluss
+          regOpen: !!(t.reg && t.reg.open),
+          regUntil: t.reg && t.reg.deadline ? new Date(t.reg.deadline + 'T23:59:59') : null
         });
       });
     }).then(function () {
@@ -246,6 +249,70 @@
     if (unsubList) { unsubList(); unsubList = null; }
   }
 
+  /* ---------- Anmeldungen von Vereinen ---------- */
+
+  var registrations = [];
+  var unsubReg = null;
+
+  function startRegListening() {
+    stopRegListening();
+    unsubReg = fb.onSnapshot(fb.collection(db, 'registrations'), function (snap) {
+      var list = [];
+      snap.forEach(function (d) {
+        var r = d.data();
+        r.id = d.id;
+        list.push(r);
+      });
+      list.sort(function (a, b) { return regTime(a) - regTime(b); });
+      registrations = list;
+      if (hooks.onRegistrations) hooks.onRegistrations(list);
+    }, function (err) {
+      if (hooks.onRegistrations) hooks.onRegistrations(registrations, errText(err));
+    });
+  }
+
+  function stopRegListening() {
+    if (unsubReg) { unsubReg(); unsubReg = null; }
+    registrations = [];
+  }
+
+  function regTime(r) {
+    var c = r.createdAt;
+    if (!c) return Date.now();
+    if (typeof c.toMillis === 'function') return c.toMillis();
+    if (typeof c === 'string') return Date.parse(c);
+    if (c.seconds) return c.seconds * 1000;
+    return 0;
+  }
+
+  // Öffentlich, ohne Anmeldung
+  function submitRegistration(data) {
+    return load().then(function () {
+      var doc = {};
+      Object.keys(data).forEach(function (k) { doc[k] = data[k]; });
+      doc.createdAt = fb.serverTimestamp();
+      return fb.addDoc(fb.collection(db, 'registrations'), doc);
+    }).catch(function (err) {
+      if (/permission-denied/.test((err && err.code) || '')) throw new Error('Die Anmeldung ist für dieses Turnier gerade nicht geöffnet.');
+      throw new Error(errText(err));
+    });
+  }
+
+  function updateRegistration(id, fields) {
+    if (!enabled()) return Promise.reject(new Error('Nicht angemeldet'));
+    return fb.updateDoc(fb.doc(db, 'registrations', id), fields).catch(function (err) {
+      setGlobal('error', 'Anmeldung konnte nicht gespeichert werden: ' + errText(err));
+      throw err;
+    });
+  }
+
+  function deleteRegistration(id) {
+    if (!enabled()) return Promise.reject(new Error('Nicht angemeldet'));
+    return fb.deleteDoc(fb.doc(db, 'registrations', id));
+  }
+
+  function getRegistrations() { return registrations; }
+
   /* ---------- Login ---------- */
 
   function login(email, password) {
@@ -289,8 +356,8 @@
       fb.onAuthStateChanged(auth, function (u) {
         user = u;
         authKnown = true;
-        if (u) startListening();
-        else stopListening();
+        if (u) { startListening(); startRegListening(); }
+        else { stopListening(); stopRegListening(); if (hooks.onRegistrations) hooks.onRegistrations([]); }
         setGlobal('ok');
         if (hooks.onAuth) hooks.onAuth(u);
       });
@@ -320,6 +387,11 @@
     globalStatus: globalStatus,
     serialize: serialize,
     watchTournament: watchTournament,
-    liveUrl: liveUrl
+    liveUrl: liveUrl,
+    regUrl: function (id) { return location.origin + location.pathname + '#/anmeldung/' + encodeURIComponent(id); },
+    submitRegistration: submitRegistration,
+    updateRegistration: updateRegistration,
+    deleteRegistration: deleteRegistration,
+    getRegistrations: getRegistrations
   };
 })(this);

@@ -1,14 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /tournaments/{id} {
-      // Eltern & Zuschauer: ein einzelnes Turnier über den Live-Link lesen (ohne Anmeldung)
-      allow get: if true;
 
-      // Turnierleitung: Liste sehen, anlegen, ändern, löschen – nur diese E-Mail-Adressen
-      // (Adressen in der Liste immer kleinschreiben – Firebase speichert Logins in Kleinbuchstaben)
-      allow list, create, update, delete: if request.auth != null
+    // Turnierleitung: E-Mail-Adressen immer kleingeschrieben eintragen
+    function isAdmin() {
+      return request.auth != null
         && request.auth.token.email.lower() in ['deine-mail@example.de'];
+    }
+
+    // Anmeldung nur, solange sie für das Turnier geöffnet ist und der Anmeldeschluss nicht vorbei ist
+    function regOpen(tid) {
+      let t = get(/databases/$(database)/documents/tournaments/$(tid)).data;
+      return t.get('regOpen', false) == true
+        && (t.get('regUntil', null) == null || request.time <= t.regUntil);
+    }
+
+    function text(v, max) { return v is string && v.size() <= max; }
+
+    match /tournaments/{id} {
+      // Eltern & Zuschauer: ein einzelnes Turnier über den Live- oder Anmelde-Link lesen
+      allow get: if true;
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    match /registrations/{rid} {
+      // Vereine: ohne Anmeldung eine Anmeldung abschicken – nur mit gültigen Feldern
+      allow create: if regOpen(request.resource.data.tournamentId)
+        && request.resource.data.keys().hasOnly(['tournamentId', 'club', 'team', 'contact', 'email', 'phone', 'note', 'logo', 'consent', 'status', 'createdAt'])
+        && request.resource.data.keys().hasAll(['tournamentId', 'club', 'contact', 'email', 'consent', 'status', 'createdAt'])
+        && text(request.resource.data.club, 80) && request.resource.data.club.size() > 0
+        && text(request.resource.data.contact, 80) && request.resource.data.contact.size() > 0
+        && text(request.resource.data.email, 120) && request.resource.data.email.matches('.+@.+[.].+')
+        && text(request.resource.data.get('team', ''), 80)
+        && text(request.resource.data.get('phone', ''), 40)
+        && text(request.resource.data.get('note', ''), 500)
+        && text(request.resource.data.get('logo', ''), 150000)
+        && request.resource.data.consent == true
+        && request.resource.data.status in ['new', 'waitlist']
+        && request.resource.data.createdAt == request.time;
+      // Kontaktdaten sieht und bearbeitet nur die Turnierleitung
+      allow read, update, delete: if isAdmin();
     }
   }
 }

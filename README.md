@@ -56,6 +56,12 @@ Mit Firebase (kostenloser Spark-Tarif):
 - **Eltern & Zuschauer** bekommen über „Live-Link & QR-Code“ einen Link (`…/#/live/<id>`). Die Live-Ansicht braucht keine Anmeldung, hat keine Eingabefelder und aktualisiert sich selbst.
 - Gespeichert wird je Turnier ein Dokument `tournaments/<id>` in Firestore. Geschützt wird über `firestore.rules`: lesen darf jeder mit Link, schreiben nur die dort eingetragenen E-Mail-Adressen.
 
+### Anmeldung für Vereine
+Im Reiter **„Anmeldungen“** eines Turniers die Anmeldung öffnen, Plätze, Anmeldeschluss und Ausschreibungstext festlegen und den Anmelde-Link (`…/#/anmeldung/<id>`, auch als QR-Code) verschicken.
+- Vereine melden sich ohne Konto an (Verein, Mannschaftsname, Ansprechpartner, E-Mail, Telefon, Logo, Bemerkung, Einwilligung). Ist das Turnier voll, landen sie automatisch auf der Warteliste.
+- Die Turnierleitung bestätigt – das Team bekommt den nächsten freien Platz (Name + Logo) und kann auf einen anderen Platz getauscht werden. Absagen gibt den Platz wieder frei. Anmeldungen lassen sich in ein anderes Turnier verschieben.
+- Öffentlich sichtbar sind nur bestätigte Teams und freie Plätze. Kontaktdaten liegen getrennt in `registrations/` und sind nur für die Turnierleitung lesbar.
+
 ### Einrichtung
 1. Firebase-Konsole → Projekt → Web-App hinzufügen (`</>`), Konfiguration in `js/firebase-config.js` eintragen.
 2. Authentication → Anmeldemethode „E-Mail/Passwort“ aktivieren, unter „Users“ die Turnierleitung anlegen.

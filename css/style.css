@@ -233,6 +233,32 @@ label.field.check input { width: 20px; height: 20px; }
 .qr svg, .qr img { width: 200px; height: 200px; }
 .login-card { max-width: 420px; }
 
+/* Vereins-Anmeldung */
+.reg-page { max-width: 860px; }
+.reg-facts { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.fact { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 18px; display: grid; min-width: 140px; }
+.fact-num { font-size: 28px; font-weight: 800; color: var(--green); line-height: 1.1; }
+.fact-num.small-num { font-size: 20px; padding: 4px 0; }
+.fact-label { font-size: 13px; color: var(--muted); }
+.reg-text { margin-bottom: 14px; }
+.reg-form textarea, .card textarea { font: inherit; }
+.consent { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 13px; color: var(--muted); }
+.consent input { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+.hp { position: absolute !important; left: -9999px !important; width: 1px !important; height: 1px !important; opacity: 0; }
+.reg-done { border-left: 4px solid var(--green-2); }
+.reg-teams { display: flex; flex-wrap: wrap; gap: 8px; }
+.reg-team { display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px 5px 8px; font-weight: 600; font-size: 14px; }
+.reg-summary { margin: 16px 0 0; font-size: 15px; }
+.reg-list { display: grid; gap: 10px; }
+.reg-card { display: grid; gap: 10px; }
+.reg-main { display: flex; gap: 12px; align-items: flex-start; }
+.reg-logo { width: 44px; height: 44px; object-fit: contain; flex: none; border-radius: 8px; }
+.reg-logo.empty { background: #eef2ef; display: inline-block; }
+.reg-name { font-weight: 700; font-size: 16px; }
+.reg-note { margin-top: 4px; color: var(--ink); font-style: italic; }
+.reg-actions select { width: auto; padding: 4px 6px; }
+.reg-pill { background: #fff3d6; color: var(--warn-ink); text-decoration: none; }
+
 /* Spielplan */
 .slot { margin-bottom: 14px; }
 .slot-head { font-weight: 700; font-size: 14px; color: var(--green); margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }

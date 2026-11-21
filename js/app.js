@@ -9,7 +9,8 @@
   var importInput = document.getElementById('import-file');
   var topbarSub = document.getElementById('topbar-sub');
 
-  var state = { tournaments: [], storageOk: true, showNewForm: false, newFormat: 'groups', newTeams: 16, live: null, showShare: false };
+  var state = { tournaments: [], storageOk: true, showNewForm: false, newFormat: 'groups', newTeams: 16, live: null, showShare: false,
+    registrations: [], regErr: '', regView: null, regForm: {}, regDone: {} };
   var viewOnly = false; // Live-Ansicht für Zuschauer: nur lesen
   var brand = document.querySelector('.brand');
 
@@ -52,6 +53,14 @@
       state.storageOk = false;
       document.getElementById('storage-warning').hidden = false;
     }
+  }
+
+  // Tippt gerade jemand in ein Feld? Dann nicht neu zeichnen (Cursor würde springen)
+  function isTyping() {
+    var a = document.activeElement;
+    if (!a || !app.contains(a) || a.readOnly || a.disabled) return false;
+    if (a.tagName === 'TEXTAREA') return true;
+    return a.tagName === 'INPUT' && /^(text|number|email|password|tel|search|)$/.test(a.type || '');
   }
 
   function find(id) {
@@ -116,6 +125,7 @@
     var parts = (location.hash || '#/').replace(/^#\/?/, '').split('/');
     if (parts[0] === 't' && parts[1]) return { view: 'tournament', id: parts[1], tab: parts[2] || 'setup' };
     if (parts[0] === 'login') return { view: 'login' };
+    if (parts[0] === 'anmeldung' && parts[1]) return { view: 'register', id: decodeURIComponent(parts[1]) };
     if (parts[0] === 'live' && parts[1]) return { view: 'live', id: decodeURIComponent(parts[1]), tab: parts[2] || '' };
     return { view: 'home' };
   }
@@ -176,10 +186,13 @@
     var active = document.activeElement && document.activeElement.id;
     viewOnly = r.view === 'live';
     app.classList.toggle('view-only', viewOnly);
-    brand.setAttribute('href', viewOnly ? '#/live/' + encodeURIComponent(r.id) : '#/');
+    brand.setAttribute('href', viewOnly ? '#/live/' + encodeURIComponent(r.id) : r.view === 'register' ? '#/anmeldung/' + encodeURIComponent(r.id) : '#/');
     if (r.view !== 'live' && state.live) { state.live.unsub(); state.live = null; }
+    if (r.view !== 'register' && state.regView) { state.regView.unsub(); state.regView = null; }
     if (r.view === 'live') {
       renderLive(r);
+    } else if (r.view === 'register') {
+      renderRegister(r);
     } else if (r.view === 'tournament') {
       var t = find(r.id);
       if (!t) { go('#/'); return; }
@@ -199,7 +212,7 @@
       var el = document.getElementById(active);
       if (el) el.focus();
     }
-    if (state.showShare && r.view === 'tournament') drawQr();
+    drawQr();
   }
 
   /* ----- Live-Ansicht ----- */
@@ -257,15 +270,18 @@
   }
 
   function drawQr() {
-    var box = document.getElementById('qr');
-    if (!box) return;
-    var url = box.getAttribute('data-url');
+    var boxes = app.querySelectorAll('.qr[data-url]');
+    if (!boxes.length) return;
     loadQrLib().then(function () {
-      var qr = window.qrcode(0, 'M');
-      qr.addData(url);
-      qr.make();
-      box.innerHTML = qr.createSvgTag ? qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }) : qr.createImgTag(6, 12);
-    }).catch(function () { box.textContent = 'QR-Code nicht verfügbar (offline?) – Link oben nutzen.'; });
+      Array.prototype.forEach.call(boxes, function (box) {
+        var qr = window.qrcode(0, 'M');
+        qr.addData(box.getAttribute('data-url'));
+        qr.make();
+        box.innerHTML = qr.createSvgTag ? qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }) : qr.createImgTag(6, 12);
+      });
+    }).catch(function () {
+      Array.prototype.forEach.call(boxes, function (box) { box.textContent = 'QR-Code nicht verfügbar (offline?) – Link nutzen.'; });
+    });
   }
 
   function renderShare(t) {
@@ -279,6 +295,235 @@
       '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Öffnen</a>' +
       '<button class="btn small" data-action="share">Schließen</button></div></div>' +
       '<div class="qr" id="qr" data-url="' + esc(url) + '">QR-Code wird erstellt …</div></div>';
+  }
+
+  /* ===== Vereins-Anmeldung ===== */
+
+  function regsFor(t) {
+    return state.registrations.filter(function (r) { return r.tournamentId === t.id; });
+  }
+
+  function regSettings(t) {
+    var r = t.reg || {};
+    return { open: !!r.open, deadline: r.deadline || '', max: r.max || t.teams.length, text: r.text || '', privacy: r.privacy || '' };
+  }
+
+  function deadlinePassed(rs) {
+    if (!rs.deadline) return false;
+    return new Date() > new Date(rs.deadline + 'T23:59:59');
+  }
+
+  function confirmedTeams(t) {
+    return slotOrder(t).map(function (id) { return teamObj(t, id); }).filter(function (tm) { return tm && tm.regId; });
+  }
+
+  // Team-Plätze in Gruppen-Reihenfolge, mit Beschriftung
+  function slotOrder(t) {
+    var groups = isAndi(t) ? t.groups1 : t.groups;
+    var out = [];
+    (groups || [t.teams.map(function (x) { return x.id; })]).forEach(function (g) { out = out.concat(g); });
+    return out;
+  }
+
+  function slotLabel(t, id) {
+    var groups = isAndi(t) ? t.groups1 : t.groups;
+    var idx = t.teams.map(function (x) { return x.id; }).indexOf(id);
+    if (fmt(t) === 'league') return 'Platz ' + (idx + 1);
+    for (var g = 0; g < groups.length; g++) {
+      var p = groups[g].indexOf(id);
+      if (p >= 0) return 'Gruppe ' + (isAndi(t) ? g + 1 : String.fromCharCode(65 + g)) + ' · Pos. ' + (p + 1);
+    }
+    return 'Platz ' + (idx + 1);
+  }
+
+  function placeholderName(t, id) {
+    var idx = t.teams.map(function (x) { return x.id; }).indexOf(id);
+    return 'Team ' + (idx + 1);
+  }
+
+  // --- Öffentliche Anmeldeseite ---
+
+  function renderRegister(r) {
+    if (!Sync.configured()) {
+      app.innerHTML = '<div class="card empty">Die Online-Anmeldung ist noch nicht eingerichtet.</div>';
+      return;
+    }
+    if (!state.regView || state.regView.id !== r.id) {
+      if (state.regView) state.regView.unsub();
+      var rv = { id: r.id, t: null, err: null, unsub: function () {} };
+      state.regView = rv;
+      rv.unsub = Sync.watchTournament(r.id, function (data, err) {
+        if (state.regView !== rv) return;
+        rv.t = data; rv.err = err;
+        if (route().view !== 'register') return;
+        if (isTyping()) { state.pendingRender = true; return; }
+        render();
+      });
+    }
+    var t = state.regView.t;
+    topbarSub.textContent = 'Anmeldung';
+    if (!t) {
+      app.innerHTML = state.regView.err
+        ? '<div class="card empty">' + (state.regView.err === 'not-found' ? 'Dieses Turnier gibt es nicht (mehr).' : esc(state.regView.err)) + '</div>'
+        : '<div class="card empty">Lade Turnier …</div>';
+      return;
+    }
+    document.title = 'Anmeldung – ' + t.name;
+    topbarSub.textContent = t.name + ' · Anmeldung';
+    var rs = regSettings(t);
+    var confirmed = confirmedTeams(t);
+    var free = Math.max(0, rs.max - confirmed.length);
+    var open = rs.open && !deadlinePassed(rs);
+    var h = '<div class="reg-page">' +
+      '<div class="t-head"><div class="t-title">' + logoHtml(t.logo, 'tour-logo') + '<div><h1>Anmeldung: ' + esc(t.name) + '</h1><div class="muted">' +
+      esc([fmtDate(t.date), t.venue, t.ageGroup, GE.formatInfo(fmt(t)).name].filter(Boolean).join(' · ')) + '</div></div></div></div>';
+
+    h += '<div class="reg-facts">' +
+      '<div class="fact"><span class="fact-num">' + free + '</span><span class="fact-label">von ' + rs.max + ' Plätzen frei</span></div>' +
+      (rs.deadline ? '<div class="fact"><span class="fact-num small-num">' + esc(fmtDate(rs.deadline)) + '</span><span class="fact-label">Anmeldeschluss</span></div>' : '') +
+      '<div class="fact"><span class="fact-num">' + confirmed.length + '</span><span class="fact-label">Teams bestätigt</span></div></div>';
+
+    if (rs.text) h += '<div class="card reg-text">' + esc(rs.text).replace(/\n/g, '<br>') + '</div>';
+
+    var done = state.regDone[t.id];
+    if (done) {
+      h += '<div class="card reg-done"><h2 style="margin-top:0">Danke, ' + esc(done.name) + '!</h2>' +
+        (done.status === 'waitlist'
+          ? '<p>Das Turnier ist bereits voll. Eure Anmeldung steht auf der <b>Warteliste</b> – die Turnierleitung meldet sich, wenn ein Platz frei wird.</p>'
+          : '<p>Eure Anmeldung ist eingegangen. Die Turnierleitung prüft sie und meldet sich bei euch. Sobald sie bestätigt ist, erscheint euer Team unten in der Liste.</p>') +
+        '<div class="btn-row"><button class="btn" data-action="reg-another">Weitere Mannschaft anmelden</button></div></div>';
+    } else if (!open) {
+      h += '<div class="banner warn">' + (rs.open && deadlinePassed(rs) ? 'Der Anmeldeschluss ist vorbei.' : 'Die Anmeldung für dieses Turnier ist geschlossen.') + '</div>';
+    } else {
+      h += renderRegForm(t, rs, free);
+    }
+
+    h += '<h2>Bestätigte Teams</h2>';
+    h += confirmed.length
+      ? '<div class="reg-teams">' + confirmed.map(function (tm) { return '<span class="reg-team">' + logoHtml(tm.logo, 'tlogo') + esc(tm.name) + '</span>'; }).join('') + '</div>'
+      : '<p class="muted">Noch keine Teams bestätigt.</p>';
+    h += '</div>';
+    app.innerHTML = h;
+  }
+
+  function renderRegForm(t, rs, free) {
+    var f = state.regForm;
+    var v = function (k) { return esc(f[k] || ''); };
+    var h = '<div class="card reg-form"><h2 style="margin-top:0">Mannschaft anmelden</h2>';
+    if (free === 0) h += '<div class="banner info">Alle Plätze sind vergeben. Ihr könnt euch trotzdem anmelden und kommt auf die Warteliste.</div>';
+    h += '<p class="muted small">Mehrere Mannschaften? Bitte jede Mannschaft einzeln anmelden. Pflichtfelder sind mit * markiert.</p>' +
+      '<div class="form-grid">' +
+      '<label class="field">Verein *<input type="text" id="reg-club" data-regf="club" maxlength="80" value="' + v('club') + '" autocomplete="organization"></label>' +
+      '<label class="field">Mannschaftsname<input type="text" id="reg-team" data-regf="team" maxlength="80" value="' + v('team') + '" placeholder="z. B. Verein 2 – leer = Vereinsname"></label>' +
+      '<label class="field">Ansprechpartner *<input type="text" id="reg-contact" data-regf="contact" maxlength="80" value="' + v('contact') + '" autocomplete="name"></label>' +
+      '<label class="field">E-Mail *<input type="text" id="reg-email" data-regf="email" maxlength="120" inputmode="email" value="' + v('email') + '" autocomplete="email"></label>' +
+      '<label class="field">Telefon<input type="text" id="reg-phone" data-regf="phone" maxlength="40" inputmode="tel" value="' + v('phone') + '" autocomplete="tel"></label>' +
+      '</div>' +
+      '<label class="field" style="margin-top:12px">Bemerkung<textarea id="reg-note" data-regf="note" maxlength="500" rows="3">' + v('note') + '</textarea></label>' +
+      '<div class="logo-field"><span class="field-label">Vereinslogo (optional)</span>' +
+      '<button class="logo-btn' + (f.logo ? ' has-logo' : '') + '" data-action="reg-logo" aria-label="Vereinslogo">' + (f.logo ? '<img src="' + esc(f.logo) + '" alt="">' : '<span>+ Logo</span>') + '</button>' +
+      (f.logo ? '<button class="btn small danger" data-action="reg-logo-remove">Entfernen</button>' : '') +
+      '<input type="file" id="reg-logo-file" accept="image/*" hidden></div>' +
+      '<input type="text" id="reg-website" data-regf="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">' +
+      '<label class="consent"><input type="checkbox" id="reg-consent" data-regf="consent"' + (f.consent ? ' checked' : '') + '> <span>Ich willige ein, dass die Angaben zur Organisation dieses Turniers gespeichert werden. ' +
+      'Ansprechpartner, E-Mail und Telefon sieht nur die Turnierleitung. Vereins-/Mannschaftsname und Logo werden nach der Bestätigung im Spielplan öffentlich angezeigt.' +
+      (rs.privacy ? ' <a href="' + esc(rs.privacy) + '" target="_blank" rel="noopener">Datenschutzerklärung</a>' : '') + ' *</span></label>' +
+      '<div class="btn-row" style="margin-top:14px"><button class="btn primary" data-action="reg-submit">' + (free === 0 ? 'Auf die Warteliste setzen' : 'Verbindlich anmelden') + '</button></div>' +
+      '<p id="reg-msg" class="small sync-error" style="margin-bottom:0">' + esc(state.regErr || '') + '</p></div>';
+    return h;
+  }
+
+  // --- Reiter „Anmeldungen“ (Turnierleitung) ---
+
+  var REG_STATUS = [
+    { key: 'new', title: 'Neu eingegangen' },
+    { key: 'confirmed', title: 'Bestätigt' },
+    { key: 'waitlist', title: 'Warteliste' },
+    { key: 'declined', title: 'Abgesagt' }
+  ];
+
+  function renderRegAdmin(t) {
+    var rs = regSettings(t);
+    var url = Sync.regUrl(t.id);
+    var h = '';
+    h += '<div class="card"><h3>Anmeldung für Vereine</h3><div class="form-grid">' +
+      '<label class="field check"><span>Anmeldung geöffnet</span><input type="checkbox" id="reg-open" data-reg="open"' + (rs.open ? ' checked' : '') + '></label>' +
+      '<label class="field">Anmeldeschluss<input type="date" id="reg-deadline" data-reg="deadline" value="' + esc(rs.deadline) + '"></label>' +
+      '<label class="field">Plätze (max. Teams)<input type="number" id="reg-max" data-reg="max" min="1" max="64" value="' + esc(rs.max) + '"></label>' +
+      '<label class="field">Link Datenschutzerklärung (optional)<input type="text" id="reg-privacy" data-reg="privacy" value="' + esc(rs.privacy) + '" placeholder="https://…"></label>' +
+      '</div><label class="field" style="margin-top:12px">Ausschreibung (wird auf der Anmeldeseite angezeigt)' +
+      '<textarea id="reg-text" data-reg="text" rows="4" placeholder="z. B. Startgeld, Spielzeit, Ablauf, Verpflegung …">' + esc(rs.text) + '</textarea></label>';
+    if (rs.open && deadlinePassed(rs)) h += '<div class="banner warn" style="margin-top:10px">Der Anmeldeschluss ist vorbei – neue Anmeldungen sind nicht mehr möglich.</div>';
+    if (rs.max > t.teams.length) h += '<div class="banner warn" style="margin-top:10px">Das Turnier hat nur ' + t.teams.length + ' Team-Plätze. Erhöhe die Teamanzahl unter „Teams & Einstellungen“, sonst kannst du nicht alle bestätigen.</div>';
+    h += '<div class="share-card" style="margin-top:12px;padding:0;border:0"><div class="share-text">' +
+      '<label class="field">Anmelde-Link für die Ausschreibung<input type="text" id="reg-url" readonly value="' + esc(url) + '"></label>' +
+      '<div class="btn-row" style="margin-top:8px"><button class="btn small primary" data-action="copy-reg-link">Link kopieren</button>' +
+      '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Anmeldeseite öffnen</a></div>' +
+      '<p class="muted small">Tipp: Den QR-Code in die Ausschreibung oder Einladung einfügen (Rechtsklick → Bild speichern bzw. Screenshot).</p></div>' +
+      '<div class="qr" data-url="' + esc(url) + '">QR-Code wird erstellt …</div></div></div>';
+
+    if (!Sync.enabled()) {
+      return h + '<div class="banner info" style="margin-top:14px">Melde dich an, um die eingegangenen Anmeldungen zu sehen. <a href="#/login">Anmelden</a></div>';
+    }
+    var regs = regsFor(t);
+    var confirmed = confirmedTeams(t).length;
+    h += '<div class="reg-summary"><b>' + confirmed + ' / ' + rs.max + '</b> Plätze bestätigt · ' +
+      regs.filter(function (r) { return r.status === 'new'; }).length + ' neu · ' +
+      regs.filter(function (r) { return r.status === 'waitlist'; }).length + ' auf der Warteliste</div>';
+    if (state.regErr) h += '<div class="banner warn">' + esc(state.regErr) + '</div>';
+    REG_STATUS.forEach(function (st) {
+      var list = regs.filter(function (r) { return (r.status || 'new') === st.key; });
+      if (!list.length && st.key !== 'new') return;
+      h += '<h2>' + st.title + ' <span class="muted small">(' + list.length + ')</span></h2>';
+      if (!list.length) { h += '<p class="muted">Keine neuen Anmeldungen.</p>'; return; }
+      h += '<div class="reg-list">' + list.map(function (r) { return renderRegCard(t, r); }).join('') + '</div>';
+    });
+    return h;
+  }
+
+  function regDate(r) {
+    var c = r.createdAt, d = null;
+    if (c && typeof c.toDate === 'function') d = c.toDate();
+    else if (typeof c === 'string') d = new Date(c);
+    else if (c && c.seconds) d = new Date(c.seconds * 1000);
+    if (!d || isNaN(d)) return '';
+    return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '. ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  function renderRegCard(t, r) {
+    var name = r.team || r.club;
+    var st = r.status || 'new';
+    var h = '<div class="card reg-card">' +
+      '<div class="reg-main">' + (r.logo ? '<img class="reg-logo" src="' + esc(r.logo) + '" alt="">' : '<span class="reg-logo empty"></span>') +
+      '<div><div class="reg-name">' + esc(name) + (r.team && r.team !== r.club ? ' <span class="muted small">(' + esc(r.club) + ')</span>' : '') + '</div>' +
+      '<div class="small">' + esc(r.contact || '') + ' · <a href="mailto:' + esc(r.email || '') + '">' + esc(r.email || '') + '</a>' +
+      (r.phone ? ' · <a href="tel:' + esc(r.phone.replace(/[^0-9+]/g, '')) + '">' + esc(r.phone) + '</a>' : '') + '</div>' +
+      (r.note ? '<div class="small reg-note">„' + esc(r.note) + '“</div>' : '') +
+      '<div class="muted small">Eingegangen ' + esc(regDate(r)) + '</div></div></div>' +
+      '<div class="btn-row reg-actions">';
+    if (st === 'new' || st === 'waitlist') {
+      h += '<button class="btn small primary" data-action="reg-confirm" data-id="' + esc(r.id) + '">Bestätigen</button>';
+      if (st === 'new') h += '<button class="btn small" data-action="reg-wait" data-id="' + esc(r.id) + '">Warteliste</button>';
+      h += '<button class="btn small danger" data-action="reg-decline" data-id="' + esc(r.id) + '">Absagen</button>';
+    } else if (st === 'confirmed') {
+      var tm = t.teams.filter(function (x) { return x.regId === r.id; })[0];
+      h += '<label class="small">Platz: <select id="slot-' + esc(r.id) + '" data-regslot="' + esc(r.id) + '">' +
+        slotOrder(t).map(function (id) {
+          var o = teamObj(t, id);
+          return '<option value="' + esc(id) + '"' + (tm && tm.id === id ? ' selected' : '') + '>' + esc(slotLabel(t, id) + (o.regId && o.regId !== r.id ? ' – ' + o.name : o.regId ? '' : ' – frei')) + '</option>';
+        }).join('') + '</select></label>' +
+        '<button class="btn small" data-action="reg-wait" data-id="' + esc(r.id) + '">Auf Warteliste</button>' +
+        '<button class="btn small danger" data-action="reg-decline" data-id="' + esc(r.id) + '">Absagen</button>';
+    } else {
+      h += '<button class="btn small" data-action="reg-restore" data-id="' + esc(r.id) + '">Wiederherstellen</button>' +
+        '<button class="btn small danger" data-action="reg-delete" data-id="' + esc(r.id) + '">Endgültig löschen</button>';
+    }
+    var others = state.tournaments.filter(function (x) { return x.id !== t.id; });
+    if (others.length) {
+      h += '<label class="small">Verschieben: <select id="move-' + esc(r.id) + '" data-regmove="' + esc(r.id) + '"><option value="">anderes Turnier …</option>' +
+        others.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name + (x.date ? ' (' + fmtDate(x.date) + ')' : '')) + '</option>'; }).join('') + '</select></label>';
+    }
+    return h + '</div></div>';
   }
 
   /* ----- Anmeldung ----- */
@@ -365,6 +610,10 @@
         '<div class="muted small">' + esc([fmtDate(t.date), t.venue, t.ageGroup].filter(Boolean).join(' · ') || 'ohne Datum') + '</div>' +
         '<div class="muted small">' + esc(GE.formatInfo(fmt(t)).name + ' · ' + t.teams.length + ' Teams') + '</div>' +
         '<span class="status-pill">' + esc(statusText(t)) + '</span>' +
+        (function () {
+          var n = regsFor(t).filter(function (r) { return r.status === 'new'; }).length;
+          return n ? ' <a class="status-pill reg-pill" href="#/t/' + esc(t.id) + '/anmeldung">' + n + ' neue Anmeldung' + (n > 1 ? 'en' : '') + '</a>' : '';
+        })() +
         '<div class="btn-row">' +
         '<a class="btn small" href="' + tbase(t) + firstPlayTab(t) + '">Öffnen</a>' +
         '<button class="btn small" data-action="export" data-id="' + esc(t.id) + '">Exportieren</button>' +
@@ -403,11 +652,12 @@
     if (!isAndi(t)) return h + renderGenericTournament(t, tab);
 
     h += '<nav class="tabs">';
-    TABS.forEach(function (x) {
+    withRegTab(t, TABS).forEach(function (x) {
       if (viewOnly && x.key === 'setup') return;
       var count = '';
       if (x.key === 'p1') count = TL.phaseProgress(t, 1).done + '/24';
       if (x.key === 'p2' && t.groups2) count = TL.phaseProgress(t, 2).done + '/24';
+      if (x.count) count = x.count;
       h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (count ? '<span class="count">' + count + '</span>' : '') + '</a>';
     });
@@ -418,8 +668,18 @@
     else if (tab === 'ko') h += renderKo(t);
     else if (tab === 'final') h += renderFinal(t);
     else if (tab === 'info') h += renderInfo(t);
+    else if (tab === 'anmeldung' && !viewOnly) h += renderRegAdmin(t);
     else h += renderSetup(t);
     return h;
+  }
+
+  // Reiter „Anmeldungen“ direkt nach den Einstellungen (nur mit Online-Speicher)
+  function withRegTab(t, tabs) {
+    if (viewOnly || !Sync.configured()) return tabs;
+    var n = regsFor(t).filter(function (r) { return r.status === 'new'; }).length;
+    var out = tabs.slice();
+    out.splice(1, 0, { key: 'anmeldung', label: 'Anmeldungen', count: n ? n + ' neu' : '' });
+    return out;
   }
 
   /* ----- Teams & Einstellungen ----- */
@@ -705,7 +965,7 @@
 
   function renderGenericTournament(t, tab) {
     var h = '<nav class="tabs">';
-    genericTabs(t).forEach(function (x) {
+    withRegTab(t, genericTabs(t)).forEach(function (x) {
       if (viewOnly && x.key === 'setup') return;
       h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
@@ -715,6 +975,7 @@
     if (tab === 'ko' && GE.hasKo(t)) return h + renderGKo(t);
     if (tab === 'final') return h + renderGFinal(t);
     if (tab === 'info') return h + renderInfo(t);
+    if (tab === 'anmeldung') return h + renderRegAdmin(t);
     return h + renderGSetup(t);
   }
 
@@ -919,7 +1180,7 @@
   function renderMultiTournament(t, tab) {
     var tl = ME.timeline(t);
     var h = '<nav class="tabs">';
-    multiTabs(t, tl).forEach(function (x) {
+    withRegTab(t, multiTabs(t, tl)).forEach(function (x) {
       if (viewOnly && x.key === 'setup') return;
       h += '<a class="tab' + (x.key === tab ? ' active' : '') + '" href="' + tbase(t) + x.key + '">' +
         x.label + (x.count ? '<span class="count">' + x.count + '</span>' : '') + '</a>';
@@ -930,6 +1191,7 @@
     if (tab === 'po') return h + renderMPo(t, tl);
     if (tab === 'final') return h + renderMFinal(t);
     if (tab === 'info') return h + renderInfo(t);
+    if (tab === 'anmeldung') return h + renderRegAdmin(t);
     return h + renderMSetup(t);
   }
 
@@ -1206,6 +1468,89 @@
     go('#/t/' + t.id + '/ko');
   }
 
+  /* ----- Anmeldungen verwalten ----- */
+
+  function regById(id) {
+    for (var i = 0; i < state.registrations.length; i++) if (state.registrations[i].id === id) return state.registrations[i];
+    return null;
+  }
+
+  function regTournament(r) { return r ? find(r.tournamentId) : null; }
+
+  // Team-Platz freigeben (Name zurück auf Platzhalter)
+  function regUnassign(regId) {
+    var r = regById(regId), t = regTournament(r);
+    if (!t) return;
+    var changed = false;
+    t.teams.forEach(function (tm) {
+      if (tm.regId === regId) {
+        tm.name = placeholderName(t, tm.id);
+        delete tm.logo;
+        delete tm.regId;
+        changed = true;
+      }
+    });
+    if (changed) save(t);
+  }
+
+  function regSetStatus(regId, status) {
+    var r = regById(regId);
+    if (!r) return;
+    if (r.status === 'confirmed' && status !== 'confirmed') regUnassign(regId);
+    r.status = status; // sofort anzeigen, Firestore bestätigt per Snapshot
+    Sync.updateRegistration(regId, { status: status, teamId: null }).catch(function () {});
+    render();
+  }
+
+  function regConfirm(regId) {
+    var r = regById(regId), t = regTournament(r);
+    if (!t) return;
+    var rs = regSettings(t);
+    var slot = null;
+    slotOrder(t).some(function (id) { var tm = teamObj(t, id); if (!tm.regId) { slot = tm; return true; } return false; });
+    if (!slot) { alert('Alle ' + t.teams.length + ' Team-Plätze sind schon vergeben. Erhöhe die Teamanzahl unter „Teams & Einstellungen“ oder setze die Anmeldung auf die Warteliste.'); return; }
+    if (confirmedTeams(t).length >= rs.max && !confirm('Damit sind mehr als die eingestellten ' + rs.max + ' Plätze bestätigt. Trotzdem bestätigen?')) return;
+    slot.name = r.team || r.club;
+    if (r.logo) slot.logo = r.logo; else delete slot.logo;
+    slot.regId = r.id;
+    save(t);
+    r.status = 'confirmed';
+    Sync.updateRegistration(r.id, { status: 'confirmed', teamId: slot.id }).catch(function () {});
+    render();
+  }
+
+  // Bestätigtes Team auf einen anderen Platz setzen (tauscht mit dem bisherigen Inhaber)
+  function regMoveSlot(regId, targetId) {
+    var r = regById(regId), t = regTournament(r);
+    if (!t) return;
+    var from = t.teams.filter(function (x) { return x.regId === regId; })[0];
+    var to = teamObj(t, targetId);
+    if (!from || !to || from === to) return;
+    var keys = ['name', 'logo', 'regId'];
+    var a = {}, b = {};
+    keys.forEach(function (k) { a[k] = from[k]; b[k] = to[k]; });
+    keys.forEach(function (k) {
+      if (b[k] === undefined) delete from[k]; else from[k] = b[k];
+      if (a[k] === undefined) delete to[k]; else to[k] = a[k];
+    });
+    if (!from.regId) from.name = placeholderName(t, from.id);
+    save(t);
+    Sync.updateRegistration(regId, { teamId: to.id }).catch(function () {});
+    if (from.regId) Sync.updateRegistration(from.regId, { teamId: from.id }).catch(function () {});
+    render();
+  }
+
+  function regMoveTournament(regId, targetTid) {
+    var r = regById(regId);
+    if (!r || !targetTid) return;
+    var target = find(targetTid);
+    if (!confirm('Anmeldung von „' + (r.team || r.club) + '“ zu „' + target.name + '“ verschieben? Sie erscheint dort als neue Anmeldung.')) { render(); return; }
+    if (r.status === 'confirmed') regUnassign(regId);
+    r.tournamentId = targetTid; r.status = 'new';
+    Sync.updateRegistration(regId, { tournamentId: targetTid, status: 'new', teamId: null }).catch(function () {});
+    render();
+  }
+
   function lockKoGeneric(t) {
     if (!GE.stageComplete(t)) return;
     if (TL.hasResultsWithPrefix(t, 'ko') && !confirm('Die K.-o.-Runde wird neu gebildet. Bereits eingetragene K.-o.-Ergebnisse werden gelöscht. Fortfahren?')) return;
@@ -1244,6 +1589,8 @@
       t.groups2 = null;
       t.koSeeds = null;
       if (t.format === 'multi') { t.stages = { 2: null, 3: null }; t.po = {}; }
+      t.teams.forEach(function (tm) { delete tm.regId; });
+      if (t.reg) t.reg.open = false;
       t.createdAt = new Date().toISOString();
       state.tournaments.push(t);
       save(t);
@@ -1271,6 +1618,67 @@
       Sync.logout().then(function () { go('#/'); });
     },
     'share': function () { state.showShare = !state.showShare; render(); },
+    'copy-reg-link': function () {
+      var inp = document.getElementById('reg-url');
+      inp.select();
+      var done = function () { var b = app.querySelector('[data-action="copy-reg-link"]'); if (b) b.textContent = 'Kopiert ✓'; };
+      if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(done, function () { document.execCommand('copy'); done(); });
+      else { document.execCommand('copy'); done(); }
+    },
+    'reg-logo': function () { var f = document.getElementById('reg-logo-file'); if (f) { f.value = ''; f.click(); } },
+    'reg-logo-remove': function () { delete state.regForm.logo; render(); },
+    'reg-another': function () { var r = route(); delete state.regDone[r.id]; state.regForm = {}; render(); },
+    'reg-submit': function () {
+      var r = route(), t = state.regView && state.regView.t;
+      if (!t) return;
+      var f = state.regForm;
+      var msg = document.getElementById('reg-msg');
+      var err = !f.club || !f.club.trim() ? 'Bitte den Verein angeben.'
+        : !f.contact || !f.contact.trim() ? 'Bitte einen Ansprechpartner angeben.'
+        : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((f.email || '').trim()) ? 'Bitte eine gültige E-Mail-Adresse angeben.'
+        : !f.consent ? 'Bitte die Einwilligung bestätigen.' : '';
+      if (err) { state.regErr = err; msg.textContent = err; return; }
+      var rs = regSettings(t);
+      var full = confirmedTeams(t).length >= rs.max;
+      var name = (f.team || '').trim() || f.club.trim();
+      if (f.website) { state.regDone[t.id] = { name: name, status: 'new' }; state.regForm = {}; render(); return; } // Spam-Schutz
+      var data = {
+        tournamentId: t.id,
+        club: f.club.trim(),
+        team: (f.team || '').trim(),
+        contact: f.contact.trim(),
+        email: f.email.trim(),
+        phone: (f.phone || '').trim(),
+        note: (f.note || '').trim(),
+        consent: true,
+        status: full ? 'waitlist' : 'new'
+      };
+      if (f.logo) data.logo = f.logo;
+      var btn = app.querySelector('[data-action="reg-submit"]');
+      btn.disabled = true; msg.className = 'small'; msg.textContent = 'Sende Anmeldung …';
+      Sync.submitRegistration(data).then(function () {
+        state.regDone[t.id] = { name: name, status: data.status };
+        state.regForm = {}; state.regErr = '';
+        render();
+        window.scrollTo(0, 0);
+      }).catch(function (e) {
+        state.regErr = e.message;
+        btn.disabled = false; msg.className = 'small sync-error'; msg.textContent = e.message;
+      });
+    },
+    'reg-confirm': function (el) { regConfirm(el.dataset.id); },
+    'reg-wait': function (el) { regSetStatus(el.dataset.id, 'waitlist'); },
+    'reg-decline': function (el) {
+      var r = regById(el.dataset.id);
+      if (r && confirm('Anmeldung von „' + (r.team || r.club) + '“ absagen?')) regSetStatus(r.id, 'declined');
+    },
+    'reg-restore': function (el) { regSetStatus(el.dataset.id, 'new'); },
+    'reg-delete': function (el) {
+      var r = regById(el.dataset.id);
+      if (!r || !confirm('Anmeldung von „' + (r.team || r.club) + '“ endgültig löschen? Die Kontaktdaten werden gelöscht.')) return;
+      regUnassign(r.id);
+      Sync.deleteRegistration(r.id);
+    },
     'copy-link': function () {
       var inp = document.getElementById('share-url');
       inp.select();
@@ -1383,6 +1791,10 @@
 
   app.addEventListener('input', function (e) {
     var el = e.target;
+    if (el.dataset.regf) {
+      state.regForm[el.dataset.regf] = el.type === 'checkbox' ? el.checked : el.value;
+      return;
+    }
     var t = currentTournament();
     if (!t) return;
 
@@ -1437,6 +1849,12 @@
       t.info[parseInt(el.dataset.rule, 10)][el.dataset.key] = el.value;
       save(t);
     }
+    if (el.dataset.reg && el.dataset.reg !== 'open') {
+      t.reg = t.reg || {};
+      var key = el.dataset.reg;
+      t.reg[key] = key === 'max' ? Math.max(1, parseInt(el.value, 10) || 1) : el.value;
+      save(t); return;
+    }
     if (el.dataset.loc && el.dataset.lkey === 'name') {
       t.config.locations.forEach(function (l) { if (l.id === el.dataset.loc) l.name = el.value; });
       save(t);
@@ -1467,6 +1885,14 @@
       return;
     }
     if (el.id === 'new-teams') { state.newTeams = parseInt(el.value, 10) || 16; return; }
+    if (el.dataset.regf) { state.regForm[el.dataset.regf] = el.type === 'checkbox' ? el.checked : el.value; return; }
+    if (el.id === 'reg-logo-file') {
+      var file = el.files && el.files[0];
+      if (file) shrinkImage(file, 160).then(function (d) { state.regForm.logo = d; render(); }).catch(function (err) { alert(err.message); });
+      return;
+    }
+    if (el.dataset.regslot) { regMoveSlot(el.dataset.regslot, el.value); return; }
+    if (el.dataset.regmove) { regMoveTournament(el.dataset.regmove, el.value); return; }
     var t = currentTournament();
     if (!t) return;
     if (el.dataset.gstruct) {
@@ -1486,6 +1912,12 @@
     }
     if (el.dataset.move) {
       GE.moveTeam(t, el.dataset.move, parseInt(el.value, 10));
+      save(t); render(); return;
+    }
+    if (el.dataset.reg === 'open') {
+      t.reg = t.reg || {};
+      t.reg.open = el.checked;
+      if (!t.reg.max) t.reg.max = t.teams.length;
       save(t); render(); return;
     }
     if (el.dataset.mstruct) { if (ME.setTeamCount(t, parseInt(el.value, 10))) { save(t); } render(); return; }
@@ -1529,8 +1961,7 @@
   app.addEventListener('focusout', function () {
     if (!state.pendingRender) return;
     setTimeout(function () {
-      var a = document.activeElement;
-      if (a && a.tagName === 'INPUT' && app.contains(a)) return; // direkt ins nächste Feld gewechselt
+      if (isTyping()) return; // direkt ins nächste Feld gewechselt
       state.pendingRender = false;
       render();
     }, 400);
@@ -1589,11 +2020,18 @@
     onStatus: updateSyncStatus,
     onPulled: function () {
       // nicht neu zeichnen, während jemand gerade tippt – wird beim Verlassen des Feldes nachgeholt
-      var a = document.activeElement;
-      if (a && a.tagName === 'INPUT' && app.contains(a)) { state.pendingRender = true; updateSyncStatus(null); return; }
+      if (isTyping()) { state.pendingRender = true; updateSyncStatus(null); return; }
       render();
     },
-    onAuth: function () { if (route().view !== 'live') render(); }
+    onAuth: function () { if (route().view !== 'live' && route().view !== 'register') render(); },
+    onRegistrations: function (list, err) {
+      state.registrations = list || [];
+      state.regErr = err || '';
+      var v = route().view;
+      if (v !== 'tournament' && v !== 'home') return;
+      if (isTyping()) { state.pendingRender = true; return; }
+      render();
+    }
   });
   render();
 })();
