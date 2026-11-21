@@ -104,6 +104,10 @@ body > .banner { border-radius: 0; margin: 0; text-align: center; }
 .tname { display: inline-flex; align-items: center; gap: 7px; vertical-align: middle; }
 .tlogo { width: 24px; height: 24px; object-fit: contain; flex: none; }
 .game .home .tname { flex-direction: row-reverse; }
+.tn { display: inline-flex; flex-direction: column; line-height: 1.2; }
+.game .home .tn { align-items: flex-end; }
+.tsub { font-size: 12px; font-weight: 500; color: var(--muted); }
+.reg-name .tsub { font-size: 13px; margin-left: 4px; }
 .ranking .tlogo { width: 30px; height: 30px; }
 .t-title { display: flex; align-items: center; gap: 14px; }
 .tour-logo { width: 64px; height: 64px; object-fit: contain; flex: none; }

@@ -94,7 +94,8 @@
   // Teamname mit Logo (falls vorhanden)
   function teamHtml(t, id) {
     var tm = teamObj(t, id);
-    return '<span class="tname">' + logoHtml(tm && tm.logo, 'tlogo') + '<span>' + esc(TL.teamName(t, id)) + '</span></span>';
+    return '<span class="tname">' + logoHtml(tm && tm.logo, 'tlogo') + '<span class="tn"><span>' + esc(TL.teamName(t, id)) + '</span>' +
+      (tm && tm.sub ? '<small class="tsub">' + esc(tm.sub) + '</small>' : '') + '</span></span>';
   }
 
   // Bild verkleinern (max x max Pixel, Seitenverhältnis bleibt) -> Data-URL
@@ -400,7 +401,7 @@
 
     h += '<h2>Bestätigte Teams</h2>';
     h += confirmed.length
-      ? '<div class="reg-teams">' + confirmed.map(function (tm) { return '<span class="reg-team">' + logoHtml(tm.logo, 'tlogo') + esc(tm.name) + '</span>'; }).join('') + '</div>'
+      ? '<div class="reg-teams">' + confirmed.map(function (tm) { return '<span class="reg-team">' + teamHtml(t, tm.id) + '</span>'; }).join('') + '</div>'
       : '<p class="muted">Noch keine Teams bestätigt.</p>';
     h += '</div>';
     app.innerHTML = h;
@@ -414,7 +415,7 @@
     h += '<p class="muted small">Mehrere Mannschaften? Bitte jede Mannschaft einzeln anmelden. Pflichtfelder sind mit * markiert.</p>' +
       '<div class="form-grid">' +
       '<label class="field">Verein *<input type="text" id="reg-club" data-regf="club" maxlength="80" value="' + v('club') + '" autocomplete="organization"></label>' +
-      '<label class="field">Mannschaftsname<input type="text" id="reg-team" data-regf="team" maxlength="80" value="' + v('team') + '" placeholder="z. B. Verein 2 – leer = Vereinsname"></label>' +
+      '<label class="field">Mannschaft (optional)<input type="text" id="reg-team" data-regf="team" maxlength="80" value="' + v('team') + '" placeholder="z. B. U10 oder 2. Mannschaft"></label>' +
       '<label class="field">Ansprechpartner *<input type="text" id="reg-contact" data-regf="contact" maxlength="80" value="' + v('contact') + '" autocomplete="name"></label>' +
       '<label class="field">E-Mail *<input type="text" id="reg-email" data-regf="email" maxlength="120" inputmode="email" value="' + v('email') + '" autocomplete="email"></label>' +
       '<label class="field">Telefon<input type="text" id="reg-phone" data-regf="phone" maxlength="40" inputmode="tel" value="' + v('phone') + '" autocomplete="tel"></label>' +
@@ -495,7 +496,7 @@
     var st = r.status || 'new';
     var h = '<div class="card reg-card">' +
       '<div class="reg-main">' + (r.logo ? '<img class="reg-logo" src="' + esc(r.logo) + '" alt="">' : '<span class="reg-logo empty"></span>') +
-      '<div><div class="reg-name">' + esc(name) + (r.team && r.team !== r.club ? ' <span class="muted small">(' + esc(r.club) + ')</span>' : '') + '</div>' +
+      '<div><div class="reg-name">' + esc(r.club) + (r.team && r.team !== r.club ? ' <span class="tsub">' + esc(r.team) + '</span>' : '') + '</div>' +
       '<div class="small">' + esc(r.contact || '') + ' · <a href="mailto:' + esc(r.email || '') + '">' + esc(r.email || '') + '</a>' +
       (r.phone ? ' · <a href="tel:' + esc(r.phone.replace(/[^0-9+]/g, '')) + '">' + esc(r.phone) + '</a>' : '') + '</div>' +
       (r.note ? '<div class="small reg-note">„' + esc(r.note) + '“</div>' : '') +
@@ -1486,6 +1487,7 @@
       if (tm.regId === regId) {
         tm.name = placeholderName(t, tm.id);
         delete tm.logo;
+        delete tm.sub;
         delete tm.regId;
         changed = true;
       }
@@ -1510,7 +1512,8 @@
     slotOrder(t).some(function (id) { var tm = teamObj(t, id); if (!tm.regId) { slot = tm; return true; } return false; });
     if (!slot) { alert('Alle ' + t.teams.length + ' Team-Plätze sind schon vergeben. Erhöhe die Teamanzahl unter „Teams & Einstellungen“ oder setze die Anmeldung auf die Warteliste.'); return; }
     if (confirmedTeams(t).length >= rs.max && !confirm('Damit sind mehr als die eingestellten ' + rs.max + ' Plätze bestätigt. Trotzdem bestätigen?')) return;
-    slot.name = r.team || r.club;
+    slot.name = r.club;
+    if (r.team && r.team !== r.club) slot.sub = r.team; else delete slot.sub;
     if (r.logo) slot.logo = r.logo; else delete slot.logo;
     slot.regId = r.id;
     save(t);
@@ -1526,7 +1529,7 @@
     var from = t.teams.filter(function (x) { return x.regId === regId; })[0];
     var to = teamObj(t, targetId);
     if (!from || !to || from === to) return;
-    var keys = ['name', 'logo', 'regId'];
+    var keys = ['name', 'sub', 'logo', 'regId'];
     var a = {}, b = {};
     keys.forEach(function (k) { a[k] = from[k]; b[k] = to[k]; });
     keys.forEach(function (k) {
@@ -2027,6 +2030,12 @@
     onRegistrations: function (list, err) {
       state.registrations = list || [];
       state.regErr = err || '';
+      (list || []).forEach(function (r) {
+        if (r.status !== 'confirmed' || !r.team || r.team === r.club) return;
+        var t = find(r.tournamentId);
+        var tm = t && t.teams.filter(function (x) { return x.regId === r.id; })[0];
+        if (tm && tm.name === r.team && !tm.sub) { tm.name = r.club; tm.sub = r.team; save(t); }
+      });
       var v = route().view;
       if (v !== 'tournament' && v !== 'home') return;
       if (isTyping()) { state.pendingRender = true; return; }
